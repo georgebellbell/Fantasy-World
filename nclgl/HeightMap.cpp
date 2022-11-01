@@ -49,6 +49,8 @@ HeightMap::HeightMap(const std::string& name) {
 			indices[i++] = a;
 			indices[i++] = d;
 		}
+		glPrimitiveRestartIndex(z);
+
 	}
 	BufferData();
 

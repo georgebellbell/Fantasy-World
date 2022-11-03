@@ -52,6 +52,7 @@ HeightMap::HeightMap(const std::string& name) {
 		glPrimitiveRestartIndex(z);
 
 	}
+	GenerateNormals();
 	BufferData();
 
 	heightmapSize.x = vertexScale.x * (iWidth - 1);

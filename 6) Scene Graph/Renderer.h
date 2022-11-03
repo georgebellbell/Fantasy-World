@@ -16,10 +16,25 @@ public:
 
 protected:
 	void DrawNode(SceneNode* n);
+	void PresentScene();
+	void DrawPostProcess();
+	void DrawScene();
+	void GenerateSceneBuffer(int width, int height);
+	void GeneratePostProcessBuffer(int width, int height);
+
 
 	SceneNode* root;
 	Camera* camera;
 	Mesh* cube;
-	Shader* shader;
+	Shader* sceneShader;
+	Shader* processShader;
+	Shader* finalShader;
+	Mesh* quad;
+
+	GLuint bufferFBO;
+	GLuint processFBO;
+	GLuint bufferColourTex;
+	GLuint bufferDepthTex;
+	GLuint processTexture;
 };
 

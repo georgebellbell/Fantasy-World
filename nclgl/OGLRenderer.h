@@ -36,6 +36,7 @@ _-_-_-_-_-_-_-""  ""
 #include "Shader.h"
 #include "Mesh.h"
 
+
 using std::vector;
 
 #define OPENGL_DEBUGGING
@@ -58,6 +59,7 @@ public:
 	bool			HasInitialised() const;	
 	
 protected:
+	void SetShaderLight(const Light& l);
 	void			SetTextureRepeating(GLuint target, bool repeating);
 	virtual void	Resize(int x, int y);	
 	void			UpdateShaderMatrices();

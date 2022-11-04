@@ -6,10 +6,11 @@
 class Light {
 public:
 	Light() {} // Default constructor , we ’ll be needing this later !
-	Light(const Vector3 & position, const Vector4 & colour, float radius) {
+	Light(const Vector3 & position, const Vector4 & colour, float radius, const Vector4 & specular) {
 		this -> position = position;
 		this -> colour = colour;
 		this -> radius = radius;
+		this->specular = specular;
 	}
 	
 	~Light(void) {};
@@ -22,9 +23,13 @@ public:
 	
 	Vector4 GetColour() const { return colour; }
 	void SetColour(const Vector4 & val) { colour = val; }
+
+	Vector4 GetSpecular() const { return specular; }
+	void SetSpecular(const Vector4 & val) { specular = val; }
 	
 protected:
 	Vector3 position;
 	float radius;
 	Vector4 colour;
+	Vector4 specular;
 };

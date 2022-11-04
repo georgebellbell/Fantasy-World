@@ -1,19 +1,21 @@
-#include "../NCLGL/window.h"
+#include "../nclgl/window.h"
 #include "Renderer.h"
 
-int main()	{
-	Window w("Make your own project!", 1280, 720, false);
-
-	if(!w.HasInitialised()) {
+int main() {
+	Window w("Split Screen!", 1280, 720, false);
+	if (!w.HasInitialised()) {
 		return -1;
 	}
-	
+
 	Renderer renderer(w);
-	if(!renderer.HasInitialised()) {
+	if (!renderer.HasInitialised()) {
 		return -1;
 	}
 
-	while(w.UpdateWindow()  && !Window::GetKeyboard()->KeyDown(KEYBOARD_ESCAPE)){
+	w.LockMouseToWindow(true);
+	w.ShowOSPointer(false);
+
+	while (w.UpdateWindow() && !Window::GetKeyboard()->KeyDown(KEYBOARD_ESCAPE)) {
 		renderer.UpdateScene(w.GetTimer()->GetTimeDeltaSeconds());
 		renderer.RenderScene();
 		renderer.SwapBuffers();
@@ -21,5 +23,6 @@ int main()	{
 			Shader::ReloadAllShaders();
 		}
 	}
+
 	return 0;
 }

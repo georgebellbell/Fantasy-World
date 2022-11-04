@@ -167,6 +167,9 @@ void OGLRenderer::SetShaderLight(const Light& l)
 
 	glUniform1f(glGetUniformLocation(currentShader -> GetProgram(),"lightRadius"), l.GetRadius());
 
+
+	glUniform4fv(glGetUniformLocation(currentShader -> GetProgram(),"lightSpecular"), 1, (float*)&l.GetSpecular());
+
 }
 
 void OGLRenderer::SetTextureRepeating(GLuint target, bool repeating) {

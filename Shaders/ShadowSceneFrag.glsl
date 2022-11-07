@@ -9,6 +9,7 @@ uniform vec4 lightColour;
 uniform vec3 lightPos;
 uniform float lightRadius;
 uniform vec4 lightSpecular;
+
 in Vertex {
 	vec4 colour; 
 	vec2 texCoord;

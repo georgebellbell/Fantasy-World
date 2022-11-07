@@ -17,6 +17,8 @@ protected:
 	void DrawWater();
 	void DrawSkybox();
 
+	unsigned int uboMatrices;
+
 	Shader* lightShader;
 	Shader* reflectShader;
 	Shader* skyboxShader;

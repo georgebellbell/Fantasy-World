@@ -1,8 +1,12 @@
 #version 330 core
 
+layout (std140) uniform Matrices
+{
+    mat4 projMatrix;
+    mat4 viewMatrix;
+};
 uniform mat4 modelMatrix;
-uniform mat4 viewMatrix;
-uniform mat4 projMatrix;
+
 uniform mat4 textureMatrix;
 
 in vec3 position;

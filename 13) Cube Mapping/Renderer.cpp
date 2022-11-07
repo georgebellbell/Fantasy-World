@@ -42,7 +42,26 @@ Renderer::Renderer(Window& parent) : OGLRenderer(parent) {
 	camera = new Camera(-45.0f, 0.0f, heightmapSize * Vector3(0.5f, 5.0f, 0.5f));
 	light = new Light(heightmapSize * Vector3(0.5, 1.5f, 0.5f), Vector4(1, 1, 1, 1), heightmapSize.x, Vector4(1, 1, 1, 1));
 
+	unsigned int uniformBlockIndexReflect = glGetUniformBlockIndex(reflectShader->GetProgram(), "Matrices");
+	unsigned int uniformBlockIndexSkybox = glGetUniformBlockIndex(skyboxShader->GetProgram(), "Matrices");
+	unsigned int uniformBlockIndexLight = glGetUniformBlockIndex(lightShader->GetProgram(), "Matrices");
+
+	glUniformBlockBinding(reflectShader->GetProgram(), uniformBlockIndexReflect, 0);
+	glUniformBlockBinding(skyboxShader->GetProgram(), uniformBlockIndexSkybox, 0);
+	glUniformBlockBinding(lightShader->GetProgram(), uniformBlockIndexLight, 0);
+	
+	glGenBuffers(1, &uboMatrices);
+	glBindBuffer(GL_UNIFORM_BUFFER, uboMatrices);
+	glBufferData(GL_UNIFORM_BUFFER, 2 * sizeof(Matrix4), NULL, GL_STATIC_DRAW);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+	glBindBufferRange(GL_UNIFORM_BUFFER, 0, uboMatrices, 0, 2 * sizeof(Matrix4));
+
 	projMatrix = Matrix4::Perspective(1.0f, 15000.0f, (float)width / (float)height, 45.0f);
+
+	glBindBuffer(GL_UNIFORM_BUFFER, uboMatrices);
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Matrix4), projMatrix.values);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_BLEND);
@@ -66,6 +85,9 @@ Renderer::~Renderer(void) {
 void Renderer::UpdateScene(float dt) {
 	camera->UpdateCamera(dt);
 	viewMatrix = camera->BuildViewMatrix();
+	glBindBuffer(GL_UNIFORM_BUFFER, uboMatrices);
+	glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4), sizeof(Matrix4), viewMatrix.values);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 	waterRotate += dt * 2.0f;
 	waterRotate += dt * 0.25f;
 }
@@ -125,15 +147,15 @@ void Renderer::DrawWater() {
 
 	Vector3 hSize = heightMap->GetHeightMapSize();
 	
-		 modelMatrix = Matrix4::Translation(hSize * 0.5f) *
-		 Matrix4::Scale(hSize * 0.5f) *
-		 Matrix4::Rotation(90, Vector3(1, 0, 0));
+	modelMatrix = Matrix4::Translation(hSize * 0.5f) *
+	Matrix4::Scale(hSize * 0.5f) *
+	Matrix4::Rotation(90, Vector3(1, 0, 0));
 	
-		 textureMatrix = Matrix4::Translation(Vector3(waterCycle, 0.0f, waterCycle)) *
-		 Matrix4::Scale(Vector3(10, 10, 10)) *
-		 Matrix4::Rotation(waterRotate, Vector3(0, 0, 1));
+	textureMatrix = Matrix4::Translation(Vector3(waterCycle, 0.0f, waterCycle)) *
+	Matrix4::Scale(Vector3(10, 10, 10)) *
+	Matrix4::Rotation(waterRotate, Vector3(0, 0, 1));
 	
-		 UpdateShaderMatrices();
-		 quad->Draw();
+	UpdateShaderMatrices();
+	quad->Draw();
 
 }

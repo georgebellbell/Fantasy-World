@@ -1,10 +1,10 @@
 #version 330 core 
 
-layout (std140) uniform Matrices
-{
-    mat4 projMatrix;
-    mat4 viewMatrix;
-};
+//layout (std140) uniform Matrices
+//{
+uniform mat4 projMatrix;
+uniform mat4 viewMatrix;
+//};
 
 uniform mat4 modelMatrix;
 

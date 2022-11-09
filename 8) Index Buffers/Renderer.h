@@ -15,5 +15,19 @@ protected:
 	Shader* shader;
 	Camera* camera;
 	GLuint terrainTex;
+	GLuint heightTex;
+
+	GLuint sandTex;
+	GLuint sandBumpTex;
+	GLuint grassTex;
+	GLuint grassBumpTex;
+
+	GLuint snowTex;
+	GLuint snowBumpTex;
+
+	GLuint rockTex;
+	GLuint rockBumpTex;
+
+	unsigned int uboTextures;
 };
 

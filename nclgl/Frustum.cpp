@@ -23,19 +23,19 @@ void Frustum::FromMatrix(const Matrix4& mat)
 	planes[0] = Plane(waxis - xaxis, (mat.values[15] - mat.values[12]), true);
 
 	//LEFT
-	planes[1] = Plane(waxis - xaxis, (mat.values[15] + mat.values[12]), true);
+	planes[1] = Plane(waxis + xaxis, (mat.values[15] + mat.values[12]), true);
 
 	//BOTTOM
-	planes[2] = Plane(waxis - xaxis, (mat.values[15] + mat.values[13]), true);
+	planes[2] = Plane(waxis + yaxis, (mat.values[15] + mat.values[13]), true);
 
 	//TOP
-	planes[3] = Plane(waxis - xaxis, (mat.values[15] - mat.values[13]), true);
+	planes[3] = Plane(waxis - yaxis, (mat.values[15] - mat.values[13]), true);
 
 	//NEAR
-	planes[4] = Plane(waxis - xaxis, (mat.values[15] + mat.values[14]), true);
+	planes[4] = Plane(waxis + zaxis, (mat.values[15] + mat.values[14]), true);
 
 	//FAR
-	planes[5] = Plane(waxis - xaxis, (mat.values[15] - mat.values[14]), true);
+	planes[5] = Plane(waxis - zaxis, (mat.values[15] - mat.values[14]), true);
 
 }
 

@@ -63,6 +63,7 @@ protected:
 	void			SetTextureRepeating(GLuint target, bool repeating);
 	virtual void	Resize(int x, int y);	
 	void			UpdateShaderMatrices();
+	void			UpdateNodeShaderMatrices();
 	void			BindShader(Shader*s);
 
 	void StartDebugGroup(const std::string& s) {

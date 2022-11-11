@@ -1,39 +1,56 @@
 #pragma once
-
 #include "../nclgl/OGLRenderer.h"
-#include "../nclgl/Camera.h"
 #include "../nclgl/SceneNode.h"
-#include "../nclgl/CubeRobot.h"
+#include "../nclgl/Frustum.h"
+class HeightMap;
+class Camera;
+class Mesh;
+class SceneNode;
 
 class Renderer : public OGLRenderer
 {
 public:
 	Renderer(Window& parent);
+	
 	~Renderer(void);
-
-	void UpdateScene(float dt) override;
 	void RenderScene() override;
-
+	void UpdateScene(float dt) override;
 protected:
-	void DrawNode(SceneNode* n);
-	void PresentScene();
-	void DrawPostProcess();
-	void DrawScene();
-	void GenerateSceneBuffer(GLuint* buffer, int width, int height, int player);
-	void GeneratePostProcessBuffer(int width, int height);
+	void	BuildNodeLists(SceneNode* from);
+	void	SortNodeLists();
+	void	ClearNodeLists();
+	void	DrawNodes();
+	void	DrawNode(SceneNode* n);
 
+	void LoadTerrainTextures();
+	void DrawTerrain();
+	void FillTerrain();
+
+	void DrawSkybox();
+
+	HeightMap* heightMap;
+	Shader* terrainShader;
+	Shader* cubeShader;
+	Shader* skyboxShader;
+	Camera* camera;
+	Light* light;
+
+	GLuint terrainTextures[8];
+
+	GLuint cubeTex;
+	GLuint cubeMap;
+
+	unsigned int uboTextures;
+	unsigned int uboMatrices;
 
 	SceneNode* root;
-	Camera* camera[2];
-	Mesh* cube;
-	Shader* sceneShader;
-	Shader* finalShader;
-	Mesh* quad;
 
-	GLuint bufferFBO[2];
-	GLuint processFBO;
-	GLuint bufferColourTex[2];
-	GLuint bufferDepthTex[2];
-	GLuint processTexture;
+	Frustum frameFrustum;
+
+	vector<SceneNode*> transparentNodeList;
+	vector<SceneNode*> nodeList;
+
+	Mesh* cube;
+	Mesh* quad;
 };
 

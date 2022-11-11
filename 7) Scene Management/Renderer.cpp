@@ -16,11 +16,11 @@ Renderer::Renderer(Window& parent) : OGLRenderer(parent) {
 		return;
 	}
 
-	root = new SceneNode();
+	root = new SceneNode(shader);
 
 	for (int i = 0; i < 5; ++i)
 	{
-		SceneNode* s = new SceneNode();
+		SceneNode* s = new SceneNode(shader);
 		s->SetColour(Vector4(1.0f, 1.0f, 1.0f, 0.5f));
 		s->SetTransform(Matrix4::Translation(
 			Vector3(0, 100.0f, -300.0f + 100.0f + 100 * i)));
@@ -31,7 +31,8 @@ Renderer::Renderer(Window& parent) : OGLRenderer(parent) {
 		root->AddChild(s);
 	}
 
-	root->AddChild(new CubeRobot(cube));
+	CubeRobot* newRobot = new CubeRobot(shader, cube);
+	root->AddChild(newRobot);
 
 	projMatrix = Matrix4::Perspective(1.0f, 10000.0f, (float)width / (float)height, 45.0f);
 
@@ -94,13 +95,16 @@ void Renderer::DrawNode(SceneNode* n) {
 	if (n->GetMesh()) {
 		Matrix4 model = n->GetWorldTransform() * Matrix4::Scale(n->GetModelScale());
 
+		BindShader(n->GetShader());
+		glUniform1i(glGetUniformLocation(shader->GetProgram(), "diffuseTex"), 0);
+		UpdateNodeShaderMatrices();
+
 		glUniformMatrix4fv(glGetUniformLocation(shader->GetProgram(), "modelMatrix"), 1, false, model.values);
 		glUniform4fv(glGetUniformLocation(shader->GetProgram(), "nodeColour"), 1, (float*)&n->GetColour());
 
 		texture = n->GetTexture();
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, texture);
-
 		glUniform1i(glGetUniformLocation(shader->GetProgram(), "useTexture"), texture);
 
 		n->Draw(*this);
@@ -113,10 +117,9 @@ void Renderer::RenderScene() {
 
 	glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
 
-	BindShader(shader);
-	UpdateShaderMatrices();
+	//BindShader(shader);
+	//UpdateShaderMatrices();
 
-	glUniform1i(glGetUniformLocation(shader->GetProgram(), "diffuseTex"), 0);
 
 	DrawNodes();
 

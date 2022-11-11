@@ -1,6 +1,6 @@
 #include "SceneNode.h"
 
-SceneNode::SceneNode(Mesh* mesh, Vector4 colour) {
+SceneNode::SceneNode(Shader* shader, Mesh* mesh, Vector4 colour) {
 	this->mesh = mesh;
 	this->colour = colour;
 	parent = NULL;
@@ -8,6 +8,7 @@ SceneNode::SceneNode(Mesh* mesh, Vector4 colour) {
 	distanceFromCamera = 0.0f;
 	texture = 0;
 	modelScale = Vector3(1, 1, 1);
+	nodeShader = shader;
 }
 
 SceneNode::~SceneNode(void) {

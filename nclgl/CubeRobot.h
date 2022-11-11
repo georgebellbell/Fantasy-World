@@ -3,7 +3,7 @@
 class CubeRobot : public SceneNode
 {
 public:
-	CubeRobot(Mesh* cube);
+	CubeRobot(Shader* shader, Mesh* cube);
 	~CubeRobot(void) {};
 	void Update(float dt) override;
 

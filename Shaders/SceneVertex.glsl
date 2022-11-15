@@ -6,18 +6,38 @@ layout (std140) uniform Matrices
 };
 
 uniform mat4 modelMatrix;
-uniform vec4 nodeColour;
 
 in vec3 position;
 in vec2 texCoord;
+in vec3 normal;
+in vec4 tangent;
 
 out Vertex {
     vec2 texCoord;
-    vec4 colour;
+    vec3 normal;
+    vec3 tangent;
+    vec3 binormal;
+    vec3 worldPos;
 } OUT;
 
 void main(void) {
-    gl_Position = (projMatrix * viewMatrix * modelMatrix) * vec4(position, 1.0);
+    mat4 mvp = projMatrix * viewMatrix * modelMatrix;
+    gl_Position = mvp * vec4(position, 1.0);
+
     OUT.texCoord = texCoord;
-    OUT.colour = nodeColour;
+    OUT.texCoord.y = 1 - OUT.texCoord.y;
+
+    mat3 normalMatrix = transpose(inverse(mat3(modelMatrix)));
+
+    vec3 wNormal = normalize(normalMatrix * normalize(normal));
+    vec3 wTangent = normalize(normalMatrix * normalize(tangent.xyz));
+
+    OUT.normal = wNormal;
+    OUT.tangent = wTangent;
+    OUT.binormal = cross(wTangent, wNormal) * tangent.w;
+
+    vec4 worldPos = (modelMatrix * vec4(position, 1));
+
+    OUT.worldPos = worldPos.xyz;
+
 }

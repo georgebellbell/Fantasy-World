@@ -86,6 +86,14 @@ public:
 		return (int)meshLayers.size(); 
 	}
 
+	Vector3* GetVertices() const {
+		return vertices;
+	}
+
+	GLuint GetVertexCount() const {
+		return numVertices;
+	}
+
 	bool GetSubMesh(int i, const SubMesh* s) const;
 	bool GetSubMesh(const std::string& name, const SubMesh* s) const;
 

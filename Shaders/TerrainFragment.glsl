@@ -3,15 +3,17 @@
 
 layout(bindless_sampler) uniform sampler2D bindless;
 uniform textures{
-    sampler2D arr[8];
+    sampler2D arr[24];
 } terrain;
 
-
+uniform light{
+    vec4 lightColour;
+    vec3 lightPosition;
+    float lightRadius;
+    vec4 lightSpecular;
+};
 uniform vec3 cameraPos;
-uniform vec4 lightColour;
-uniform vec3 lightPos;
-uniform float lightRadius;
-uniform vec4 lightSpecular;
+
 in Vertex {
     vec2 texCoord;
     float heightNormal;
@@ -51,7 +53,7 @@ vec4 get_texture_value(int offset){
     }
 }
 void main(void) {
-    vec3 incident = normalize(lightPos - IN.worldPos);
+    vec3 incident = normalize(lightPosition - IN.worldPos);
 	vec3 viewDir = normalize(cameraPos - IN.worldPos);
 	vec3 halfDir = normalize(incident + viewDir);
 
@@ -63,7 +65,7 @@ void main(void) {
     bumpNormal = normalize(TBN * normalize(bumpNormal * 2.0 - 1.0));
 
 	float lambert = max(dot(incident, bumpNormal), 0.0f);
-	float distance = length(lightPos - IN.worldPos);
+	float distance = length(lightPosition - IN.worldPos);
 	float attenuation = 1.0f - clamp(distance / lightRadius, 0.0, 1.0);
 
 	float specFactor = clamp(dot(halfDir,bumpNormal), 0.0, 1.0);
@@ -74,6 +76,8 @@ void main(void) {
 	fragColour.rgb += (lightSpecular.rgb * specFactor)*attenuation*0.33;
 	fragColour.rgb += surface * 0.1f;
 	fragColour.a = diffuse.a;
+
+    //fragColour = vec4(IN.heightNormal, 0, 0,1);
 } 
 
     

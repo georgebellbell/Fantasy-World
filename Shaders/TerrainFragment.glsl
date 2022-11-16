@@ -26,7 +26,8 @@ in Vertex {
 	vec3 worldPos;
 } IN;
 
-out vec4 fragColour;
+layout(location = 0) out vec4 gColour;
+layout(location = 1) out vec4 gPosition;
 
 vec4 get_texture_value(int offset){
     vec4 snow = texture(terrain.arr[0 + offset], IN.texCoord);
@@ -76,11 +77,13 @@ void main(void) {
 	specFactor = pow(specFactor, 60.0f);
 
 	vec3 surface = (diffuse.rgb * lightColour.rgb);
-	fragColour.rgb = surface * lambert * attenuation;
-	fragColour.rgb += (lightSpecular.rgb * specFactor)*attenuation*0.33;
-	fragColour.rgb += surface * 0.1f;
-	fragColour.a = diffuse.a;
+	gColour.rgb = surface * lambert * attenuation;
+	gColour.rgb += (lightSpecular.rgb * specFactor)*attenuation*0.33;
+	gColour.rgb += surface * 0.1f;
+	gColour.a = diffuse.a;
 
+
+    gPosition = vec4(IN.worldPos, 1.0);
     //fragColour = vec4(IN.heightNormal, 0, 0,1);
 } 
 

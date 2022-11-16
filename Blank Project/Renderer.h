@@ -66,6 +66,7 @@ protected:
 	Shader* nodeShader;
 	Shader* skyboxShader;
 	Shader* simpleShader;
+	Shader* fogShader;
 	Camera* camera[2];
 	Light* light;
 
@@ -92,6 +93,7 @@ protected:
 	GLuint playerFBO[2];
 	GLuint playerColourTex[2];
 	GLuint playerDepthTex[2];
+	GLuint playerPositionTex[2];
 
 	GLuint processFBO;
 	GLuint processTexture;
@@ -99,6 +101,7 @@ protected:
 	GLuint sceneFBO;
 	GLuint sceneColourTex;
 	GLuint sceneDepthTex;
+	GLuint scenePositionTex;
 
 	bool splitScreenEnabled = true;
 };

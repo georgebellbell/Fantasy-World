@@ -21,7 +21,7 @@ struct lightStruct {
 	Vector4 lightSpecular;
 } mainLight;
 
-const int TREE_COUNT = 300;
+const int TREE_COUNT = 200;
 Renderer::Renderer(Window& parent) : OGLRenderer(parent) {
 	heightMap = new HeightMap(TEXTUREDIR"Fantasy_Heightmap.png");
 	Vector3 dimensions = heightMap->GetHeightMapSize();
@@ -33,7 +33,8 @@ Renderer::Renderer(Window& parent) : OGLRenderer(parent) {
 	nodeShader = new Shader("SceneVertex.glsl", "SceneFragment.glsl");
 	skyboxShader = new Shader("SkyboxVertex.glsl", "SkyboxFragment.glsl");
 	simpleShader = new Shader("TexturedVertex.glsl", "TexturedFragment.glsl");
-	if (!terrainShader->LoadSuccess() || !nodeShader->LoadSuccess() || !skyboxShader->LoadSuccess() || !simpleShader->LoadSuccess())
+	fogShader = new Shader("FogVertex.glsl", "FogFragment.glsl");
+	if (!terrainShader->LoadSuccess() || !nodeShader->LoadSuccess() || !skyboxShader->LoadSuccess() || !simpleShader->LoadSuccess() || !fogShader->LoadSuccess())
 		return;
 
 	LoadMeshes();
@@ -111,6 +112,25 @@ void Renderer::GenerateSceneBuffer(int width, int height) {
 		glObjectLabel(GL_TEXTURE, sceneDepthTex, -1, "Scene Depth Texture");
 	}
 
+	//Create position texture
+	{
+		glGenTextures(1, &scenePositionTex);
+		glBindTexture(GL_TEXTURE_2D, scenePositionTex);
+
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, width, height, 0, GL_RGB, GL_FLOAT, NULL);
+
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, scenePositionTex, 0);
+
+		glObjectLabel(GL_TEXTURE, scenePositionTex, -1, "Scene Position");
+	}
+
+	GLuint attachments[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+	glDrawBuffers(2, attachments);
+
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE || !sceneColourTex || !sceneDepthTex) {
 		return;
 	}
@@ -136,8 +156,7 @@ void Renderer::GeneratePlayerBuffer(GLuint* buffer, int width, int height, int p
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, playerColourTex[player], 0);
-		const char* label = "G-Buffer Colour, Player " + char(player + 1);
-		glObjectLabel(GL_TEXTURE, playerColourTex[player], -1, label);
+		glObjectLabel(GL_TEXTURE, playerColourTex[player], -1, "Player Colour");
 	}
 
 	//Create depth texture
@@ -154,9 +173,28 @@ void Renderer::GeneratePlayerBuffer(GLuint* buffer, int width, int height, int p
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, playerDepthTex[player], 0);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_TEXTURE_2D, playerDepthTex[player], 0);
 
-		const char* label = "G-Buffer Depth, Player " + char(player + 1);
-		glObjectLabel(GL_TEXTURE, playerDepthTex[player], -1, label);
+		glObjectLabel(GL_TEXTURE, playerDepthTex[player], -1, "Player Depth");
 	}
+
+
+	//Create position texture
+	{
+		glGenTextures(1, &playerPositionTex[player]);
+		glBindTexture(GL_TEXTURE_2D, playerPositionTex[player]);
+
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, width, height, 0, GL_RGB, GL_FLOAT, NULL);
+
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, playerPositionTex[player], 0);
+
+		glObjectLabel(GL_TEXTURE, scenePositionTex, -1, "Player Position");
+	}
+
+	GLuint attachments[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+	glDrawBuffers(2, attachments);
 
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE || !playerDepthTex[player] || !playerColourTex[player]) {
 		return;
@@ -290,6 +328,7 @@ void Renderer::CreateMatrixUBO()
 	unsigned int uniformBlockIndexSkybox = glGetUniformBlockIndex(skyboxShader->GetProgram(), "Matrices");
 	unsigned int uniformBlockIndexNode = glGetUniformBlockIndex(nodeShader->GetProgram(), "Matrices");
 	unsigned int uniformBlockIndexSimple = glGetUniformBlockIndex(simpleShader->GetProgram(), "Matrices");
+	unsigned int uniformBlockIndexFog = glGetUniformBlockIndex(fogShader->GetProgram(), "Matrices");
 
 	glBindBufferBase(GL_UNIFORM_BUFFER, 0, uboMatrices);
 
@@ -297,6 +336,7 @@ void Renderer::CreateMatrixUBO()
 	glUniformBlockBinding(skyboxShader->GetProgram(), uniformBlockIndexSkybox, 0);
 	glUniformBlockBinding(nodeShader->GetProgram(), uniformBlockIndexNode, 0);
 	glUniformBlockBinding(simpleShader->GetProgram(), uniformBlockIndexSimple, 0);
+	glUniformBlockBinding(fogShader->GetProgram(), uniformBlockIndexFog, 0);
 }
 
 void Renderer::CreateTextureUBO()
@@ -370,11 +410,13 @@ void Renderer::CreateCameraUBO() {
 
 	unsigned int uniformBlockIndexTerrain = glGetUniformBlockIndex(terrainShader->GetProgram(), "camera");
 	unsigned int uniformBlockIndexNode = glGetUniformBlockIndex(nodeShader->GetProgram(), "camera");
+	unsigned int uniformBlockIndexFog = glGetUniformBlockIndex(fogShader->GetProgram(), "camera");
 
 	glBindBufferBase(GL_UNIFORM_BUFFER, 3, uboCamera);
 
 	glUniformBlockBinding(terrainShader->GetProgram(), uniformBlockIndexTerrain, 3);
 	glUniformBlockBinding(nodeShader->GetProgram(), uniformBlockIndexNode, 3);
+	glUniformBlockBinding(fogShader->GetProgram(), uniformBlockIndexFog, 3);
 
 
 }
@@ -387,6 +429,7 @@ Renderer::~Renderer(void) {
 	delete nodeShader;
 	delete skyboxShader;
 	delete simpleShader;
+	delete fogShader;
 	delete root;
 	delete light;
 	delete quad;
@@ -394,8 +437,15 @@ Renderer::~Renderer(void) {
 	delete tree;
 	glDeleteTextures(8, terrainTextures);
 	glDeleteTextures(2, towerTextures);
+
 	glDeleteTextures(2, playerColourTex);
 	glDeleteTextures(2, playerDepthTex);
+	glDeleteTextures(2, playerPositionTex);
+
+	glDeleteTextures(1, &sceneColourTex);
+	glDeleteTextures(1, &sceneDepthTex);
+	glDeleteTextures(1, &scenePositionTex);
+
 	glDeleteFramebuffers(2, playerFBO);
 	glDeleteFramebuffers(1, &processFBO);
 }
@@ -472,7 +522,7 @@ void Renderer::DrawPostProcess()
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, processTexture, 0);
 	glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
 
-	BindShader(simpleShader);
+	BindShader(fogShader);
 	modelMatrix.ToIdentity();
 	viewMatrix.ToIdentity();
 	projMatrix.ToIdentity();
@@ -481,7 +531,7 @@ void Renderer::DrawPostProcess()
 	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Matrix4), projMatrix.values);
 	glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4), sizeof(Matrix4), viewMatrix.values);
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
-	glUniformMatrix4fv(glGetUniformLocation(simpleShader->GetProgram(), "modelMatrix"), 1, false, modelMatrix.values);
+	glUniformMatrix4fv(glGetUniformLocation(fogShader->GetProgram(), "modelMatrix"), 1, false, modelMatrix.values);
 
 	glDisable(GL_DEPTH_TEST);
 
@@ -489,9 +539,14 @@ void Renderer::DrawPostProcess()
 		for (int i = 0; i < 2; i++)
 		{
 			glActiveTexture(GL_TEXTURE0);
-			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, processTexture, 0);
+			//glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, processTexture, 0);
 			glBindTexture(GL_TEXTURE_2D, playerColourTex[i]);
-			glUniform1i(glGetUniformLocation(simpleShader->GetProgram(), "diffuseTex"), 0);
+			glUniform1i(glGetUniformLocation(fogShader->GetProgram(), "diffuseTex"), 0);
+
+			glActiveTexture(GL_TEXTURE1);
+			//glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, processTexture, 0);
+			glBindTexture(GL_TEXTURE_2D, playerPositionTex[i]);
+			glUniform1i(glGetUniformLocation(fogShader->GetProgram(), "positionTex"), 1);
 
 			modelMatrix = Matrix4::Translation(Vector3(-0.5 + i, 0, 0)) * Matrix4::Scale(Vector3(0.5, 1.0, 1.0));
 			UpdateShaderMatrices();
@@ -500,9 +555,14 @@ void Renderer::DrawPostProcess()
 	}
 	else {
 		glActiveTexture(GL_TEXTURE0);
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, processTexture, 0);
+		//glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, processTexture, 0);
 		glBindTexture(GL_TEXTURE_2D, sceneColourTex);
-		glUniform1i(glGetUniformLocation(simpleShader->GetProgram(), "diffuseTex"), 0);
+		glUniform1i(glGetUniformLocation(fogShader->GetProgram(), "diffuseTex"), 0);
+
+		glActiveTexture(GL_TEXTURE1);
+		//glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, processTexture, 0);
+		glBindTexture(GL_TEXTURE_2D, scenePositionTex);
+		glUniform1i(glGetUniformLocation(fogShader->GetProgram(), "positionTex"), 1);
 
 		quad->Draw();
 	}

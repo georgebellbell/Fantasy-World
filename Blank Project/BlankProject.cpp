@@ -22,6 +22,9 @@ int main() {
 		if (Window::GetKeyboard()->KeyDown(KEYBOARD_F5)) {
 			Shader::ReloadAllShaders();
 		}
+		if (Window::GetKeyboard()->KeyTriggered(KEYBOARD_2)) {
+			renderer.toggleSplitScreen();
+		}
 	}
 
 	return 0;

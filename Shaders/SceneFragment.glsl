@@ -12,7 +12,9 @@ uniform light{
     float lightRadius;
     vec4 lightSpecular;
 };
-uniform vec3 cameraPos;
+uniform camera{
+  vec3 cameraPos;
+};
 uniform int textureIndex;
 
 in Vertex {
@@ -27,7 +29,7 @@ out vec4 fragColour;
 
 void main(void){
     vec3 incident = normalize(lightPosition - IN.worldPos);
-	vec3 viewDir = normalize(cameraPos - IN.worldPos);
+	vec3 viewDir = normalize(cameraPos- IN.worldPos);
 	vec3 halfDir = normalize(incident + viewDir);
 
     mat3 TBN = mat3(normalize(IN.tangent), normalize(IN.binormal), normalize(IN.normal));

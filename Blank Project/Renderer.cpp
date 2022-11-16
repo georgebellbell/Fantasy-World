@@ -11,7 +11,7 @@
 
 
 struct textureStruct {
-	GLuint64 values[24] ;
+	GLuint64 values[24];
 } textures;
 
 struct lightStruct {
@@ -25,14 +25,15 @@ const int TREE_COUNT = 300;
 Renderer::Renderer(Window& parent) : OGLRenderer(parent) {
 	heightMap = new HeightMap(TEXTUREDIR"Fantasy_Heightmap.png");
 	Vector3 dimensions = heightMap->GetHeightMapSize();
-	camera = new Camera(-40, 270, dimensions * Vector3(0.5, 1, 0.5));
+	camera[0] = new Camera(-40, 270, dimensions * Vector3(0.5, 1, 0.5));
+	camera[1] = new Camera(-40, 270, dimensions * Vector3(0.5, 1, 0.5));
 	light = new Light(dimensions * Vector3(0.5f, 1.5f, 0.5f), Vector4(1, 1, 1, 1), dimensions.x * 5.0f, Vector4(1, 1, 1, 1));
-	
+
 	terrainShader = new Shader("TerrainVertex.glsl", "TerrainFragment.glsl");
 	nodeShader = new Shader("SceneVertex.glsl", "SceneFragment.glsl");
 	skyboxShader = new Shader("SkyboxVertex.glsl", "SkyboxFragment.glsl");
-
-	if (!terrainShader->LoadSuccess() || !nodeShader->LoadSuccess() || !skyboxShader->LoadSuccess())
+	simpleShader = new Shader("TexturedVertex.glsl", "TexturedFragment.glsl");
+	if (!terrainShader->LoadSuccess() || !nodeShader->LoadSuccess() || !skyboxShader->LoadSuccess() || !simpleShader->LoadSuccess())
 		return;
 
 	LoadMeshes();
@@ -43,6 +44,7 @@ Renderer::Renderer(Window& parent) : OGLRenderer(parent) {
 	CreateMatrixUBO();
 	CreateTextureUBO();
 	CreateLightsUBO();
+	CreateCameraUBO();
 
 	mainLight.lightColour = light->GetColour();
 	mainLight.lightPosition = light->GetPosition();
@@ -53,8 +55,10 @@ Renderer::Renderer(Window& parent) : OGLRenderer(parent) {
 	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(lightStruct), &mainLight);
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
-	CreateSceneNodes(dimensions);
-	
+	GenerateFrameBuffers();
+
+	CreateSceneNodes(&dimensions);
+
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -64,16 +68,142 @@ Renderer::Renderer(Window& parent) : OGLRenderer(parent) {
 	init = true;
 }
 
-void Renderer::CreateSceneNodes(Vector3& dimensions)
+void Renderer::GenerateFrameBuffers() {
+	GenerateSceneBuffer(width, height);
+	GeneratePlayerBuffer(&playerFBO[0], width / 2, height, 0);
+	GeneratePlayerBuffer(&playerFBO[1], width / 2, height, 1);
+	GeneratePostProcessBuffer(width, height);
+}
+
+void Renderer::GenerateSceneBuffer(int width, int height) {
+	glGenFramebuffers(1, &sceneFBO);
+	glBindFramebuffer(GL_FRAMEBUFFER, sceneFBO);
+
+	//Create colour texture
+	{
+		glGenTextures(1, &sceneColourTex);
+		glBindTexture(GL_TEXTURE_2D, sceneColourTex);
+
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sceneColourTex, 0);
+		glObjectLabel(GL_TEXTURE, sceneColourTex, -1, "Scene Colour Texture");
+	}
+
+	//Create depth texture
+	{
+		glGenTextures(1, &sceneDepthTex);
+		glBindTexture(GL_TEXTURE_2D, sceneDepthTex);
+
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, width, height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
+
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, sceneDepthTex, 0);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_TEXTURE_2D, sceneDepthTex, 0);
+
+		glObjectLabel(GL_TEXTURE, sceneDepthTex, -1, "Scene Depth Texture");
+	}
+
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE || !sceneColourTex || !sceneDepthTex) {
+		return;
+	}
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+}
+
+void Renderer::GeneratePlayerBuffer(GLuint* buffer, int width, int height, int player) {
+	glGenFramebuffers(1, buffer);
+	glBindFramebuffer(GL_FRAMEBUFFER, *buffer);
+
+	//Create colour texture
+	{
+		glGenTextures(1, &playerColourTex[player]);
+		glBindTexture(GL_TEXTURE_2D, playerColourTex[player]);
+
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, playerColourTex[player], 0);
+		const char* label = "G-Buffer Colour, Player " + char(player + 1);
+		glObjectLabel(GL_TEXTURE, playerColourTex[player], -1, label);
+	}
+
+	//Create depth texture
+	{
+		glGenTextures(1, &playerDepthTex[player]);
+		glBindTexture(GL_TEXTURE_2D, playerDepthTex[player]);
+
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, width, height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
+
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, playerDepthTex[player], 0);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_TEXTURE_2D, playerDepthTex[player], 0);
+
+		const char* label = "G-Buffer Depth, Player " + char(player + 1);
+		glObjectLabel(GL_TEXTURE, playerDepthTex[player], -1, label);
+	}
+
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE || !playerDepthTex[player] || !playerColourTex[player]) {
+		return;
+	}
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+}
+
+void Renderer::GeneratePostProcessBuffer(int width, int height) {
+	glGenFramebuffers(1, &processFBO);
+	glBindFramebuffer(GL_FRAMEBUFFER, processFBO);
+
+	glGenTextures(1, &processTexture);
+	glBindTexture(GL_TEXTURE_2D, processTexture);
+
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, processTexture, 0);
+
+	glObjectLabel(GL_TEXTURE, processTexture, -1, "Post-Processing Colour");
+
+	//Check framebuffer status
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+		//Should probably print an error here 
+		return;
+	}
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void Renderer::CreateSceneNodes(Vector3* dimensions)
 {
 	root = new SceneNode(nodeShader);
 
 	SceneNode* forest = new SceneNode(nodeShader);
-	forest->SetTransform(Matrix4::Translation(dimensions * Vector3(0.25, 0, 0)));
+	forest->SetTransform(Matrix4::Translation(*dimensions * Vector3(0.25, 0, 0)));
 	root->AddChild(forest);
 
 	SceneNode* towerNode = new SceneNode(nodeShader);
-	towerNode->SetTransform(Matrix4::Translation(dimensions * Vector3(0.6, 0.25, 0.55)));
+	towerNode->SetTransform(Matrix4::Translation(*dimensions * Vector3(0.6, 0.25, 0.55)));
 	towerNode->SetModelScale(Vector3(300.0f, 300.0f, 300.0f));
 	towerNode->SetBoundingRadius(3000.0f);
 	towerNode->SetMesh(tower);
@@ -140,7 +270,7 @@ void Renderer::LoadTextures()
 
 	towerTextures[0] = SOIL_load_OGL_texture(TEXTUREDIR"towerDiffuse.png", SOIL_LOAD_AUTO, SOIL_CREATE_NEW_ID, SOIL_FLAG_MIPMAPS);
 	towerTextures[1] = SOIL_load_OGL_texture(TEXTUREDIR"towerNormal.jpg", SOIL_LOAD_AUTO, SOIL_CREATE_NEW_ID, SOIL_FLAG_MIPMAPS);
-	
+
 	treeTextures[2] = SOIL_load_OGL_texture(TEXTUREDIR"TreeDiffuse1.png", SOIL_LOAD_AUTO, SOIL_CREATE_NEW_ID, SOIL_FLAG_MIPMAPS);
 	treeTextures[3] = SOIL_load_OGL_texture(TEXTUREDIR"TreeBump1.png", SOIL_LOAD_AUTO, SOIL_CREATE_NEW_ID, SOIL_FLAG_MIPMAPS);
 	treeTextures[0] = SOIL_load_OGL_texture(TEXTUREDIR"TreeDiffuse2.png", SOIL_LOAD_AUTO, SOIL_CREATE_NEW_ID, SOIL_FLAG_MIPMAPS);
@@ -159,12 +289,14 @@ void Renderer::CreateMatrixUBO()
 	unsigned int uniformBlockIndexTerrain = glGetUniformBlockIndex(terrainShader->GetProgram(), "Matrices");
 	unsigned int uniformBlockIndexSkybox = glGetUniformBlockIndex(skyboxShader->GetProgram(), "Matrices");
 	unsigned int uniformBlockIndexNode = glGetUniformBlockIndex(nodeShader->GetProgram(), "Matrices");
+	unsigned int uniformBlockIndexSimple = glGetUniformBlockIndex(simpleShader->GetProgram(), "Matrices");
 
 	glBindBufferBase(GL_UNIFORM_BUFFER, 0, uboMatrices);
 
 	glUniformBlockBinding(terrainShader->GetProgram(), uniformBlockIndexTerrain, 0);
 	glUniformBlockBinding(skyboxShader->GetProgram(), uniformBlockIndexSkybox, 0);
 	glUniformBlockBinding(nodeShader->GetProgram(), uniformBlockIndexNode, 0);
+	glUniformBlockBinding(simpleShader->GetProgram(), uniformBlockIndexSimple, 0);
 }
 
 void Renderer::CreateTextureUBO()
@@ -230,12 +362,31 @@ void Renderer::CreateLightsUBO()
 	glUniformBlockBinding(nodeShader->GetProgram(), uniformBlockIndexNode, 2);
 }
 
+void Renderer::CreateCameraUBO() {
+	glGenBuffers(1, &uboCamera);
+	glBindBuffer(GL_UNIFORM_BUFFER, uboCamera);
+	glBufferData(GL_UNIFORM_BUFFER, sizeof(Vector3), NULL, GL_DYNAMIC_DRAW);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+	unsigned int uniformBlockIndexTerrain = glGetUniformBlockIndex(terrainShader->GetProgram(), "camera");
+	unsigned int uniformBlockIndexNode = glGetUniformBlockIndex(nodeShader->GetProgram(), "camera");
+
+	glBindBufferBase(GL_UNIFORM_BUFFER, 3, uboCamera);
+
+	glUniformBlockBinding(terrainShader->GetProgram(), uniformBlockIndexTerrain, 3);
+	glUniformBlockBinding(nodeShader->GetProgram(), uniformBlockIndexNode, 3);
+
+
+}
+
 Renderer::~Renderer(void) {
 	delete heightMap;
-	delete camera;
+	delete camera[0];
+	delete camera[1];
 	delete terrainShader;
 	delete nodeShader;
 	delete skyboxShader;
+	delete simpleShader;
 	delete root;
 	delete light;
 	delete quad;
@@ -243,26 +394,147 @@ Renderer::~Renderer(void) {
 	delete tree;
 	glDeleteTextures(8, terrainTextures);
 	glDeleteTextures(2, towerTextures);
+	glDeleteTextures(2, playerColourTex);
+	glDeleteTextures(2, playerDepthTex);
+	glDeleteFramebuffers(2, playerFBO);
+	glDeleteFramebuffers(1, &processFBO);
 }
 
 void Renderer::UpdateScene(float dt) {
-	camera->UpdateCamera(dt);
-	viewMatrix = camera->BuildViewMatrix();
-	glBindBuffer(GL_UNIFORM_BUFFER, uboMatrices);
-	glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4), sizeof(Matrix4), viewMatrix.values);
-	glBindBuffer(GL_UNIFORM_BUFFER, 0);
-	frameFrustum.FromMatrix(projMatrix * viewMatrix);
-
+	camera[0]->UpdateCamera(dt);
+	camera[1]->UpdateCamera(dt);
 	root->Update(dt);
 }
 
 void Renderer::RenderScene() {
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	DrawSkybox();
-	
-	DrawTerrain();
-	FillTerrain();
+	DrawScene();
+	DrawPostProcess();
+	PresentScene();
+	ResetProjectionMatrix();
+
 }
+
+void Renderer::ResetProjectionMatrix()
+{
+	projMatrix = Matrix4::Perspective(1.0f, 15000.0f, (float)width / (float)height, 45.0f);
+	glBindBuffer(GL_UNIFORM_BUFFER, uboMatrices);
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Matrix4), projMatrix.values);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
+}
+
+void Renderer::DrawScene()
+{
+	if (splitScreenEnabled) {
+		for (int i = 0; i < 2; i++)
+		{
+			glBindFramebuffer(GL_FRAMEBUFFER, playerFBO[i]);
+			glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+			viewMatrix = camera[i]->BuildViewMatrix();
+			glBindBuffer(GL_UNIFORM_BUFFER, uboMatrices);
+			glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4), sizeof(Matrix4), viewMatrix.values);
+			glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+			glBindBuffer(GL_UNIFORM_BUFFER, uboCamera);
+			glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Vector3), &(camera[i]->GetPosition()));
+			glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+			frameFrustum.FromMatrix(projMatrix * viewMatrix);
+			DrawSkybox();
+			DrawTerrain();
+			FillTerrain(&i);
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		}
+	}
+	else {
+		glBindFramebuffer(GL_FRAMEBUFFER, sceneFBO);
+		glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+		viewMatrix = camera[0]->BuildViewMatrix();
+		glBindBuffer(GL_UNIFORM_BUFFER, uboMatrices);
+		glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4), sizeof(Matrix4), viewMatrix.values);
+		glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+		glBindBuffer(GL_UNIFORM_BUFFER, uboCamera);
+		glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Vector3), &(camera[0]->GetPosition()));
+		glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+		frameFrustum.FromMatrix(projMatrix * viewMatrix);
+		DrawSkybox();
+		DrawTerrain();
+		int camera = 0;
+		FillTerrain(&camera);
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	}
+	
+}
+void Renderer::DrawPostProcess()
+{
+	glBindFramebuffer(GL_FRAMEBUFFER, processFBO);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, processTexture, 0);
+	glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+
+	BindShader(simpleShader);
+	modelMatrix.ToIdentity();
+	viewMatrix.ToIdentity();
+	projMatrix.ToIdentity();
+
+	glBindBuffer(GL_UNIFORM_BUFFER, uboMatrices);
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Matrix4), projMatrix.values);
+	glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4), sizeof(Matrix4), viewMatrix.values);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
+	glUniformMatrix4fv(glGetUniformLocation(simpleShader->GetProgram(), "modelMatrix"), 1, false, modelMatrix.values);
+
+	glDisable(GL_DEPTH_TEST);
+
+	if (splitScreenEnabled) {
+		for (int i = 0; i < 2; i++)
+		{
+			glActiveTexture(GL_TEXTURE0);
+			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, processTexture, 0);
+			glBindTexture(GL_TEXTURE_2D, playerColourTex[i]);
+			glUniform1i(glGetUniformLocation(simpleShader->GetProgram(), "diffuseTex"), 0);
+
+			modelMatrix = Matrix4::Translation(Vector3(-0.5 + i, 0, 0)) * Matrix4::Scale(Vector3(0.5, 1.0, 1.0));
+			UpdateShaderMatrices();
+			quad->Draw();
+		}
+	}
+	else {
+		glActiveTexture(GL_TEXTURE0);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, processTexture, 0);
+		glBindTexture(GL_TEXTURE_2D, sceneColourTex);
+		glUniform1i(glGetUniformLocation(simpleShader->GetProgram(), "diffuseTex"), 0);
+
+		quad->Draw();
+	}
+
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glEnable(GL_DEPTH_TEST);
+}
+
+void Renderer::PresentScene()
+{
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+
+	BindShader(simpleShader);
+	modelMatrix.ToIdentity();
+	viewMatrix.ToIdentity();
+	projMatrix.ToIdentity();
+
+	glBindBuffer(GL_UNIFORM_BUFFER, uboMatrices);
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Matrix4), projMatrix.values);
+	glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4), sizeof(Matrix4), viewMatrix.values);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
+	glUniformMatrix4fv(glGetUniformLocation(simpleShader->GetProgram(), "modelMatrix"), 1, false, modelMatrix.values);
+
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, processTexture);
+	glUniform1i(glGetUniformLocation(simpleShader->GetProgram(), "diffuseTex"), 0);
+	quad->Draw();
+}
+
+
 
 void Renderer::DrawSkybox() {
 	glDepthMask(GL_FALSE);
@@ -273,7 +545,6 @@ void Renderer::DrawSkybox() {
 
 	glDepthMask(GL_TRUE);
 }
-
 void Renderer::DrawTerrain()
 {
 	BindShader(terrainShader);
@@ -282,21 +553,21 @@ void Renderer::DrawTerrain()
 
 	glUniform1f(glGetUniformLocation(terrainShader->GetProgram(), "terrainHeight"), heightMap->GetHeightMapSize().y);
 
-	glUniform3fv(glGetUniformLocation(terrainShader->GetProgram(), "cameraPos"), 1, (float*)&camera->GetPosition());
+	//glUniform3fv(glGetUniformLocation(terrainShader->GetProgram(), "cameraPos"), 1, (float*)&camera->GetPosition());
 
 	heightMap->Draw();
 }
 
-void Renderer::FillTerrain() {
-	BuildNodeLists(root);
+void Renderer::FillTerrain(int* camera) {
+	BuildNodeLists(root, camera);
 	SortNodeLists();
 	DrawNodes();
 	ClearNodeLists();
 }
 
-void Renderer::BuildNodeLists(SceneNode* from) {
+void Renderer::BuildNodeLists(SceneNode* from, int* cameraIndex) {
 	if (frameFrustum.InsideFrustum(*from)) {
-		Vector3 dir = from->GetWorldTransform().GetPositionVector() - camera->GetPosition();
+		Vector3 dir = from->GetWorldTransform().GetPositionVector() - camera[*cameraIndex]->GetPosition();
 		from->SetCameraDistance(Vector3::Dot(dir, dir));
 
 		if (from->GetColour().w < 1.0f) {
@@ -308,7 +579,7 @@ void Renderer::BuildNodeLists(SceneNode* from) {
 	}
 	for (vector<SceneNode*>::const_iterator i = from->GetChildIteratorStart(); i != from->GetChildIteratorEnd(); ++i)
 	{
-		BuildNodeLists((*i));
+		BuildNodeLists((*i), cameraIndex);
 	}
 }
 
@@ -338,7 +609,7 @@ void Renderer::DrawNode(SceneNode* n) {
 
 	glUniform1i(glGetUniformLocation(nodeShader->GetProgram(), "textureIndex"), n->GetTexture());
 
-	glUniform3fv(glGetUniformLocation(terrainShader->GetProgram(), "cameraPos"), 1, (float*)&camera->GetPosition());
+	//glUniform3fv(glGetUniformLocation(terrainShader->GetProgram(), "cameraPos"), 1, (float*)&camera->GetPosition());
 
 	if (nodeMesh->GetSubMeshCount() == 1) {
 		n->Draw(*this);

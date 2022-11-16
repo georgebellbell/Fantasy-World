@@ -12,7 +12,10 @@ uniform light{
     float lightRadius;
     vec4 lightSpecular;
 };
-uniform vec3 cameraPos;
+
+uniform camera{
+    vec3 cameraPos;
+};
 
 in Vertex {
     vec2 texCoord;
@@ -53,6 +56,7 @@ vec4 get_texture_value(int offset){
     }
 }
 void main(void) {
+
     vec3 incident = normalize(lightPosition - IN.worldPos);
 	vec3 viewDir = normalize(cameraPos - IN.worldPos);
 	vec3 halfDir = normalize(incident + viewDir);

@@ -13,38 +13,60 @@ class Renderer : public OGLRenderer
 public:
 	Renderer(Window& parent);
 
-	void CreateSceneNodes(Vector3& dimensions);
+	void CreateSceneNodes(Vector3* dimensions);
 
 	void LoadMeshes();
 
 	
 	~Renderer(void);
 	void RenderScene() override;
+	void ResetProjectionMatrix();
 	void UpdateScene(float dt) override;
+
+	void toggleSplitScreen() { splitScreenEnabled = !splitScreenEnabled; }
+
 protected:
-	void	BuildNodeLists(SceneNode* from);
+	void	BuildNodeLists(SceneNode* from, int* camera);
 	void	SortNodeLists();
 	void	ClearNodeLists();
 	void	DrawNodes();
 	void	DrawNode(SceneNode* n);
+	void	DrawSkybox();
+
+	void PresentScene();
+	void DrawPostProcess();
+	void DrawScene();
+
+
+	void GenerateFrameBuffers();
+	void GenerateSceneBuffer(int width, int height);
+	void GeneratePlayerBuffer(GLuint* buffer, int width, int height, int player);
+	void GeneratePostProcessBuffer(int width, int height);
+
 
 	void LoadTextures();
 	void DrawTerrain();
-	void FillTerrain();
+	void FillTerrain(int* camera);
 
 	Vector3 FindTreePosition();
 
 	void CreateTextureUBO();
 	void CreateMatrixUBO();
 	void CreateLightsUBO();
+	void CreateCameraUBO();
 
-	void DrawSkybox();
+	unsigned int uboTextures;
+	unsigned int uboMatrices;
+	unsigned int uboLights;
+	unsigned int uboCamera;
+
 
 	HeightMap* heightMap;
 	Shader* terrainShader;
 	Shader* nodeShader;
 	Shader* skyboxShader;
-	Camera* camera;
+	Shader* simpleShader;
+	Camera* camera[2];
 	Light* light;
 
 	vector<Vector3> validPositions;
@@ -54,9 +76,7 @@ protected:
 	GLuint treeTextures[4];
 	GLuint cubeMap;
 
-	unsigned int uboTextures;
-	unsigned int uboMatrices;
-	unsigned int uboLights;
+
 
 	SceneNode* root;
 
@@ -68,5 +88,18 @@ protected:
 	Mesh* tower;
 	Mesh* quad;
 	Mesh* tree;
+
+	GLuint playerFBO[2];
+	GLuint playerColourTex[2];
+	GLuint playerDepthTex[2];
+
+	GLuint processFBO;
+	GLuint processTexture;
+
+	GLuint sceneFBO;
+	GLuint sceneColourTex;
+	GLuint sceneDepthTex;
+
+	bool splitScreenEnabled = true;
 };
 

@@ -3,6 +3,7 @@
 #include "../nclgl/HeightMap.h"
 #include "../nclgl/Light.h"
 #include "../nclgl/MeshMaterial.h"
+#include "../nclgl/MeshAnimation.h"
 #include <time.h>
 #include <algorithm>
 #include <iostream>
@@ -26,15 +27,19 @@ Renderer::Renderer(Window& parent) : OGLRenderer(parent) {
 	heightMap = new HeightMap(TEXTUREDIR"Fantasy_Heightmap.png");
 	Vector3 dimensions = heightMap->GetHeightMapSize();
 	camera[0] = new Camera(-40, 270, dimensions * Vector3(0.5, 1, 0.5));
-	camera[1] = new Camera(-40, 270, dimensions * Vector3(0.5, 1, 0.5));
-	light = new Light(dimensions * Vector3(0.5f, 1.5f, 0.5f), Vector4(1, 1, 1, 1), dimensions.x * 5.0f, Vector4(1, 1, 1, 1));
+	camera[1] = new Camera(-40, 90, dimensions * Vector3(0.3, 0.5, 0.5));
+	light = new Light(dimensions * Vector3(0.5f, 1.5f, 0.5f), Vector4(1, 1, 1, 1), dimensions.x * 50.0f, Vector4(1, 1, 1, 1));
 
 	terrainShader = new Shader("TerrainVertex.glsl", "TerrainFragment.glsl");
 	nodeShader = new Shader("SceneVertex.glsl", "SceneFragment.glsl");
 	skyboxShader = new Shader("SkyboxVertex.glsl", "SkyboxFragment.glsl");
 	simpleShader = new Shader("TexturedVertex.glsl", "TexturedFragment.glsl");
 	fogShader = new Shader("FogVertex.glsl", "FogFragment.glsl");
-	if (!terrainShader->LoadSuccess() || !nodeShader->LoadSuccess() || !skyboxShader->LoadSuccess() || !simpleShader->LoadSuccess() || !fogShader->LoadSuccess())
+	characterShader = new Shader("SkinningVertex.glsl", "SkinningFragment.glsl");
+
+	if (!terrainShader->LoadSuccess() || !nodeShader->LoadSuccess()	 || 
+		!skyboxShader->LoadSuccess()  || !simpleShader->LoadSuccess()|| 
+		!fogShader->LoadSuccess()	  || !characterShader->LoadSuccess())
 		return;
 
 	LoadMeshes();
@@ -271,6 +276,13 @@ void Renderer::CreateSceneNodes(Vector3* dimensions)
 		treeNode->SetTexture(10);
 		forest->AddChild(treeNode);
 	}
+
+	SceneNode* characterNode = new SceneNode(characterShader);
+	characterNode->SetTransform(Matrix4::Translation(*dimensions * Vector3(0.8, 0.25, 0.8)) * Matrix4::Rotation(45, Vector3(0,1,0)));
+	characterNode->SetModelScale(Vector3(200.0f, 200.0f, 200.0f));
+	characterNode->SetBoundingRadius(10000.0f);
+	characterNode->SetCharacter();
+	root->AddChild(characterNode);
 }
 
 void Renderer::LoadMeshes()
@@ -278,6 +290,32 @@ void Renderer::LoadMeshes()
 	quad = Mesh::GenerateQuad();
 	tower = Mesh::LoadFromMeshFile("Tower.msh");
 	tree = Mesh::LoadFromMeshFile("Tree1.msh");
+
+	eggMesh = Mesh::LoadFromMeshFile("Egg.msh");
+	eggAnim = new MeshAnimation("Egg.anm");
+	eggMaterial = new MeshMaterial("Egg.mat");
+
+	for (int i = 0; i < eggMesh->GetSubMeshCount(); i++)
+	{
+		const MeshMaterialEntry* matEntry = eggMaterial->GetMaterialForLayer(i);
+
+		const string* filename = nullptr;
+		matEntry->GetEntry("Diffuse", &filename);
+		string path = TEXTUREDIR + *filename;
+		GLuint texID = SOIL_load_OGL_texture(path.c_str(),
+			SOIL_LOAD_AUTO, SOIL_CREATE_NEW_ID, SOIL_FLAG_MIPMAPS);
+		eggTextures.emplace_back(texID);
+
+		matEntry->GetEntry("Bump", &filename);
+		path = TEXTUREDIR + *filename;
+		texID = SOIL_load_OGL_texture(path.c_str(),
+			SOIL_LOAD_AUTO, SOIL_CREATE_NEW_ID, SOIL_FLAG_MIPMAPS);
+		eggNormals.emplace_back(texID);
+
+	}
+
+	currentFrame = 0;
+	frameTime = 0.0f;
 }
 
 Vector3 Renderer::FindTreePosition() {
@@ -329,6 +367,7 @@ void Renderer::CreateMatrixUBO()
 	unsigned int uniformBlockIndexNode = glGetUniformBlockIndex(nodeShader->GetProgram(), "Matrices");
 	unsigned int uniformBlockIndexSimple = glGetUniformBlockIndex(simpleShader->GetProgram(), "Matrices");
 	unsigned int uniformBlockIndexFog = glGetUniformBlockIndex(fogShader->GetProgram(), "Matrices");
+	unsigned int uniformBlockIndexSkeleton = glGetUniformBlockIndex(characterShader->GetProgram(), "Matrices");
 
 	glBindBufferBase(GL_UNIFORM_BUFFER, 0, uboMatrices);
 
@@ -337,6 +376,7 @@ void Renderer::CreateMatrixUBO()
 	glUniformBlockBinding(nodeShader->GetProgram(), uniformBlockIndexNode, 0);
 	glUniformBlockBinding(simpleShader->GetProgram(), uniformBlockIndexSimple, 0);
 	glUniformBlockBinding(fogShader->GetProgram(), uniformBlockIndexFog, 0);
+	glUniformBlockBinding(characterShader->GetProgram(), uniformBlockIndexSkeleton, 0);
 }
 
 void Renderer::CreateTextureUBO()
@@ -395,11 +435,13 @@ void Renderer::CreateLightsUBO()
 
 	unsigned int uniformBlockIndexTerrain = glGetUniformBlockIndex(terrainShader->GetProgram(), "light");
 	unsigned int uniformBlockIndexNode = glGetUniformBlockIndex(nodeShader->GetProgram(), "light");
+	unsigned int uniformBlockIndexCharacter = glGetUniformBlockIndex(characterShader->GetProgram(), "light");
 
 	glBindBufferBase(GL_UNIFORM_BUFFER, 2, uboLights);
 
 	glUniformBlockBinding(terrainShader->GetProgram(), uniformBlockIndexTerrain, 2);
 	glUniformBlockBinding(nodeShader->GetProgram(), uniformBlockIndexNode, 2);
+	glUniformBlockBinding(characterShader->GetProgram(), uniformBlockIndexCharacter, 2);
 }
 
 void Renderer::CreateCameraUBO() {
@@ -411,12 +453,14 @@ void Renderer::CreateCameraUBO() {
 	unsigned int uniformBlockIndexTerrain = glGetUniformBlockIndex(terrainShader->GetProgram(), "camera");
 	unsigned int uniformBlockIndexNode = glGetUniformBlockIndex(nodeShader->GetProgram(), "camera");
 	unsigned int uniformBlockIndexFog = glGetUniformBlockIndex(fogShader->GetProgram(), "camera");
+	unsigned int uniformBlockIndexCharacter = glGetUniformBlockIndex(characterShader->GetProgram(), "camera");
 
 	glBindBufferBase(GL_UNIFORM_BUFFER, 3, uboCamera);
 
 	glUniformBlockBinding(terrainShader->GetProgram(), uniformBlockIndexTerrain, 3);
 	glUniformBlockBinding(nodeShader->GetProgram(), uniformBlockIndexNode, 3);
 	glUniformBlockBinding(fogShader->GetProgram(), uniformBlockIndexFog, 3);
+	glUniformBlockBinding(characterShader->GetProgram(), uniformBlockIndexCharacter, 3);
 
 
 }
@@ -454,6 +498,12 @@ void Renderer::UpdateScene(float dt) {
 	camera[0]->UpdateCamera(dt);
 	camera[1]->UpdateCamera(dt);
 	root->Update(dt);
+
+	frameTime -= dt;
+	while (frameTime < 0.0f) {
+		currentFrame = (currentFrame + 1) % eggAnim->GetFrameCount();
+		frameTime += 1.0f / eggAnim->GetFrameRate();
+	}
 }
 
 void Renderer::RenderScene() {
@@ -539,14 +589,16 @@ void Renderer::DrawPostProcess()
 		for (int i = 0; i < 2; i++)
 		{
 			glActiveTexture(GL_TEXTURE0);
-			//glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, processTexture, 0);
 			glBindTexture(GL_TEXTURE_2D, playerColourTex[i]);
 			glUniform1i(glGetUniformLocation(fogShader->GetProgram(), "diffuseTex"), 0);
 
 			glActiveTexture(GL_TEXTURE1);
-			//glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, processTexture, 0);
 			glBindTexture(GL_TEXTURE_2D, playerPositionTex[i]);
 			glUniform1i(glGetUniformLocation(fogShader->GetProgram(), "positionTex"), 1);
+
+			glBindBuffer(GL_UNIFORM_BUFFER, uboCamera);
+			glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Vector3), &(camera[i]->GetPosition()));
+			glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
 			modelMatrix = Matrix4::Translation(Vector3(-0.5 + i, 0, 0)) * Matrix4::Scale(Vector3(0.5, 1.0, 1.0));
 			UpdateShaderMatrices();
@@ -658,18 +710,23 @@ void Renderer::DrawNodes() {
 }
 
 void Renderer::DrawNode(SceneNode* n) {
+	if (n->IsCharacter()) {
+
+		DrawCharacter(n);
+		return;
+	}
+	
 	if (!n->GetMesh()) return;
 
 	Matrix4 model = n->GetWorldTransform() * Matrix4::Scale(n->GetModelScale());
-	Shader* nodeShader = n->GetShader();
+	Shader* currentShader = n->GetShader();
 	Mesh* nodeMesh = n->GetMesh();
-	BindShader(nodeShader);
+	BindShader(currentShader);
 
-	glUniformMatrix4fv(glGetUniformLocation(nodeShader->GetProgram(), "modelMatrix"), 1, false, model.values);
+	glUniformMatrix4fv(glGetUniformLocation(currentShader->GetProgram(), "modelMatrix"), 1, false, model.values);
 
-	glUniform1i(glGetUniformLocation(nodeShader->GetProgram(), "textureIndex"), n->GetTexture());
+	glUniform1i(glGetUniformLocation(currentShader->GetProgram(), "textureIndex"), n->GetTexture());
 
-	//glUniform3fv(glGetUniformLocation(terrainShader->GetProgram(), "cameraPos"), 1, (float*)&camera->GetPosition());
 
 	if (nodeMesh->GetSubMeshCount() == 1) {
 		n->Draw(*this);
@@ -678,16 +735,54 @@ void Renderer::DrawNode(SceneNode* n) {
 		for (int i = 0; i < nodeMesh->GetSubMeshCount(); i++)
 		{
 			if (i % 2) {
-				glUniform1i(glGetUniformLocation(nodeShader->GetProgram(), "textureIndex"), n->GetTexture() + i + 1);
+				glUniform1i(glGetUniformLocation(currentShader->GetProgram(), "textureIndex"), n->GetTexture() + i + 1);
 			}
 			else {
-				glUniform1i(glGetUniformLocation(nodeShader->GetProgram(), "textureIndex"), n->GetTexture() + i);
+				glUniform1i(glGetUniformLocation(currentShader->GetProgram(), "textureIndex"), n->GetTexture() + i);
 			}
 			nodeMesh->DrawSubMesh(i);
 		}
 	}
 
 
+}
+
+void Renderer::DrawCharacter(SceneNode* n)
+{
+	Matrix4 model = n->GetWorldTransform() * Matrix4::Scale(n->GetModelScale());
+	Shader* currentShader = n->GetShader();
+	BindShader(currentShader);
+
+	glUniformMatrix4fv(glGetUniformLocation(currentShader->GetProgram(), "modelMatrix"), 1, false, model.values);
+
+	vector<Matrix4> frameMatrices;
+
+	const Matrix4* invBindPose = eggMesh->GetInverseBindPose();
+	const Matrix4* frameData = eggAnim->GetJointData(currentFrame);
+
+	for (unsigned int i = 0; i < eggMesh->GetJointCount(); i++)
+	{
+		frameMatrices.emplace_back(frameData[i] * invBindPose[i]);
+	}
+
+	int j = glGetUniformLocation(currentShader->GetProgram(), "joints");
+	glUniformMatrix4fv(j, frameMatrices.size(), false, (float*)frameMatrices.data());
+
+
+	for (int i = 0; i < eggMesh->GetSubMeshCount(); i++)
+	{
+		glUniform1i(glGetUniformLocation(currentShader->GetProgram(),
+			"diffuseTex"), 0);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, eggTextures[i]);
+
+		glUniform1i(glGetUniformLocation(currentShader->GetProgram(),
+			"normalTex"), 1);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, eggNormals[i]);
+
+		eggMesh->DrawSubMesh(i);
+	}
 }
 
 void Renderer::ClearNodeLists() {

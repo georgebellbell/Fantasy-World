@@ -32,7 +32,7 @@ Renderer::Renderer(Window& parent) : OGLRenderer(parent) {
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 	sceneMeshes.emplace_back(Mesh::GenerateQuad());
-	sceneMeshes.emplace_back(Mesh::LoadFromMeshFile("Sphere.msh"));
+	sceneMeshes.emplace_back(Mesh::LoadFromMeshFile("Egg.msh"));
 	sceneMeshes.emplace_back(Mesh::LoadFromMeshFile("Cylinder.msh"));
 	sceneMeshes.emplace_back(Mesh::LoadFromMeshFile("Cone.msh"));
 	

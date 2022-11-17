@@ -13,9 +13,9 @@ Renderer::Renderer(Window& parent) : OGLRenderer(parent) {
 
 	if (!shader->LoadSuccess()) return;
 
-	mesh = Mesh::LoadFromMeshFile("Role_T.msh");
-	anim = new MeshAnimation("Role_T.anm");
-	material = new MeshMaterial("Role_T.mat");
+	mesh = Mesh::LoadFromMeshFile("Egg.msh");
+	anim = new MeshAnimation("Egg.anm");
+	material = new MeshMaterial("Egg.mat");
 
 	for (int i = 0; i < mesh->GetSubMeshCount(); i++)
 	{

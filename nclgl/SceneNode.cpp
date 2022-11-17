@@ -1,4 +1,5 @@
 #include "SceneNode.h"
+#include <iostream>
 
 SceneNode::SceneNode(Shader* shader, Mesh* mesh, Vector4 colour) {
 	this->mesh = mesh;
@@ -30,8 +31,13 @@ void SceneNode::Draw(const OGLRenderer& r) {
 void SceneNode::Update(float dt) {
 	
 	worldTransform = parent ? parent->worldTransform * transform : transform;
-
+	int iter = 0;
 	for (vector<SceneNode*>::iterator i = children.begin(); i != children.end(); ++i) {
 		(*i)->Update(dt);
+		iter += 1;
+		if (iter == 2) {
+			std::cout << iter << std::endl;
+
+		}
 	}
 }

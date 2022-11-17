@@ -21,12 +21,12 @@ void main(void) {
     float fog_start = 1;
     float fog_end = 8000;
     float density = 0.0002;
-    
+
     float fog_factor = (distanceToFrag-fog_start) / (fog_end-fog_start);
     float fog_factor_exp = clamp(1.0 - exp(-(pow(density * distanceToFrag,2))), 0, 1);
     fog_factor = clamp(fog_factor,0,1);
 
-    vec4 fogColour = vec4(0.5,0.5,0.5,1);
+    vec4 fogColour = vec4(0.5,0.5,0.5,0.5);
     fragColour = mix(diffuse, fogColour, fog_factor_exp);
 
 

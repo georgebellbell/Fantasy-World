@@ -25,6 +25,9 @@ public:
 
 	Shader* GetShader() const { return nodeShader; }
 	void SetShader(Shader* shader) { nodeShader = shader; }
+	
+	bool IsCharacter() const { return character; }
+	void SetCharacter() { character = true; }
 
 	void AddChild(SceneNode* s);
 
@@ -57,7 +60,8 @@ protected:
 	std::vector<SceneNode*> children;
 	float distanceFromCamera;
 	float boundingRadius;
-	GLuint texture;
+	int texture;
 	Shader* nodeShader;
+	bool character = false;
 };
 

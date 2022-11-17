@@ -7,6 +7,7 @@ class Camera;
 class Mesh;
 class SceneNode;
 class MeshMaterial;
+class MeshAnimation;
 
 class Renderer : public OGLRenderer
 {
@@ -31,6 +32,7 @@ protected:
 	void	ClearNodeLists();
 	void	DrawNodes();
 	void	DrawNode(SceneNode* n);
+	void DrawCharacter(SceneNode*n);
 	void	DrawSkybox();
 
 	void PresentScene();
@@ -67,6 +69,7 @@ protected:
 	Shader* skyboxShader;
 	Shader* simpleShader;
 	Shader* fogShader;
+	Shader* characterShader;
 	Camera* camera[2];
 	Light* light;
 
@@ -76,8 +79,6 @@ protected:
 	GLuint towerTextures[2];
 	GLuint treeTextures[4];
 	GLuint cubeMap;
-
-
 
 	SceneNode* root;
 
@@ -89,6 +90,13 @@ protected:
 	Mesh* tower;
 	Mesh* quad;
 	Mesh* tree;
+
+	Mesh* eggMesh;
+	MeshMaterial* eggMaterial;
+	vector<GLuint> eggTextures;
+	vector<GLuint> eggNormals;
+	MeshAnimation* eggAnim;
+
 
 	GLuint playerFBO[2];
 	GLuint playerColourTex[2];
@@ -104,5 +112,8 @@ protected:
 	GLuint scenePositionTex;
 
 	bool splitScreenEnabled = true;
+
+	int currentFrame;
+	float frameTime;
 };
 

@@ -23,6 +23,8 @@ struct lightStruct {
 } mainLight;
 
 const int TREE_COUNT = 200;
+#define SHADOWSIZE 2048
+
 Renderer::Renderer(Window& parent) : OGLRenderer(parent) {
 	heightMap = new HeightMap(TEXTUREDIR"Fantasy_Heightmap.png");
 	Vector3 dimensions = heightMap->GetHeightMapSize();
@@ -36,10 +38,11 @@ Renderer::Renderer(Window& parent) : OGLRenderer(parent) {
 	simpleShader = new Shader("TexturedVertex.glsl", "TexturedFragment.glsl");
 	fogShader = new Shader("FogVertex.glsl", "FogFragment.glsl");
 	characterShader = new Shader("SkinningVertex.glsl", "SkinningFragment.glsl");
+	shadowShader = new Shader("shadowVert.glsl", "shadowFrag.glsl");
 
 	if (!terrainShader->LoadSuccess() || !nodeShader->LoadSuccess()	 || 
 		!skyboxShader->LoadSuccess()  || !simpleShader->LoadSuccess()|| 
-		!fogShader->LoadSuccess()	  || !characterShader->LoadSuccess())
+		!fogShader->LoadSuccess()	  || !characterShader->LoadSuccess() || !shadowShader->LoadSuccess())
 		return;
 
 	LoadMeshes();
@@ -76,6 +79,7 @@ Renderer::Renderer(Window& parent) : OGLRenderer(parent) {
 
 void Renderer::GenerateFrameBuffers() {
 	GenerateSceneBuffer(width, height);
+	GenerateShadowBuffer();
 	GeneratePlayerBuffer(&playerFBO[0], width / 2, height, 0);
 	GeneratePlayerBuffer(&playerFBO[1], width / 2, height, 1);
 	GeneratePostProcessBuffer(width, height);
@@ -143,6 +147,45 @@ void Renderer::GenerateSceneBuffer(int width, int height) {
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
+}
+
+void Renderer::GenerateShadowBuffer()
+{
+	glGenTextures(1, &shadowTex);
+	glBindTexture(GL_TEXTURE_2D, shadowTex);
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOWSIZE, SHADOWSIZE, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	glGenFramebuffers(1, &shadowFBO);
+	glBindFramebuffer(GL_FRAMEBUFFER, shadowFBO);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadowTex, 0);
+	glDrawBuffer(GL_NONE);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	for (int i = 0; i < 2; i++)
+	{
+		glGenTextures(1, &playerShadowTex[i]);
+		glBindTexture(GL_TEXTURE_2D, playerShadowTex[i]);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOWSIZE, SHADOWSIZE, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+
+		glBindTexture(GL_TEXTURE_2D, 0);
+
+		glGenFramebuffers(1, &playerShadowFBO[i]);
+		glBindFramebuffer(GL_FRAMEBUFFER, playerShadowFBO[i]);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, playerShadowTex[i], 0);
+		glDrawBuffer(GL_NONE);
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	}
 }
 
 void Renderer::GeneratePlayerBuffer(GLuint* buffer, int width, int height, int player) {
@@ -359,7 +402,7 @@ void Renderer::CreateMatrixUBO()
 {
 	glGenBuffers(1, &uboMatrices);
 	glBindBuffer(GL_UNIFORM_BUFFER, uboMatrices);
-	glBufferData(GL_UNIFORM_BUFFER, 2 * sizeof(Matrix4), projMatrix.values, GL_DYNAMIC_DRAW);
+	glBufferData(GL_UNIFORM_BUFFER, 3 * sizeof(Matrix4), projMatrix.values, GL_DYNAMIC_DRAW);
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
 	unsigned int uniformBlockIndexTerrain = glGetUniformBlockIndex(terrainShader->GetProgram(), "Matrices");
@@ -368,6 +411,8 @@ void Renderer::CreateMatrixUBO()
 	unsigned int uniformBlockIndexSimple = glGetUniformBlockIndex(simpleShader->GetProgram(), "Matrices");
 	unsigned int uniformBlockIndexFog = glGetUniformBlockIndex(fogShader->GetProgram(), "Matrices");
 	unsigned int uniformBlockIndexSkeleton = glGetUniformBlockIndex(characterShader->GetProgram(), "Matrices");
+	unsigned int uniformBlockIndexShadow = glGetUniformBlockIndex(shadowShader->GetProgram(), "Matrices");
+
 
 	glBindBufferBase(GL_UNIFORM_BUFFER, 0, uboMatrices);
 
@@ -377,6 +422,7 @@ void Renderer::CreateMatrixUBO()
 	glUniformBlockBinding(simpleShader->GetProgram(), uniformBlockIndexSimple, 0);
 	glUniformBlockBinding(fogShader->GetProgram(), uniformBlockIndexFog, 0);
 	glUniformBlockBinding(characterShader->GetProgram(), uniformBlockIndexSkeleton, 0);
+	glUniformBlockBinding(shadowShader->GetProgram(), uniformBlockIndexShadow, 0);
 }
 
 void Renderer::CreateTextureUBO()
@@ -419,11 +465,13 @@ void Renderer::CreateTextureUBO()
 
 	unsigned int uniformBlockIndexTerrain = glGetUniformBlockIndex(terrainShader->GetProgram(), "textures");
 	unsigned int uniformBlockIndexNode = glGetUniformBlockIndex(nodeShader->GetProgram(), "textures");
+	unsigned int uniformBlockIndexCharacter = glGetUniformBlockIndex(characterShader->GetProgram(), "textures");
 
 	glBindBufferBase(GL_UNIFORM_BUFFER, 1, uboTextures);
 
 	glUniformBlockBinding(terrainShader->GetProgram(), uniformBlockIndexTerrain, 1);
 	glUniformBlockBinding(nodeShader->GetProgram(), uniformBlockIndexNode, 1);
+	glUniformBlockBinding(characterShader->GetProgram(), uniformBlockIndexCharacter, 1);
 }
 
 void Renderer::CreateLightsUBO()
@@ -461,19 +509,20 @@ void Renderer::CreateCameraUBO() {
 	glUniformBlockBinding(nodeShader->GetProgram(), uniformBlockIndexNode, 3);
 	glUniformBlockBinding(fogShader->GetProgram(), uniformBlockIndexFog, 3);
 	glUniformBlockBinding(characterShader->GetProgram(), uniformBlockIndexCharacter, 3);
-
-
 }
 
 Renderer::~Renderer(void) {
 	delete heightMap;
 	delete camera[0];
 	delete camera[1];
+
 	delete terrainShader;
 	delete nodeShader;
 	delete skyboxShader;
 	delete simpleShader;
 	delete fogShader;
+	delete shadowShader;
+
 	delete root;
 	delete light;
 	delete quad;
@@ -492,6 +541,12 @@ Renderer::~Renderer(void) {
 
 	glDeleteFramebuffers(2, playerFBO);
 	glDeleteFramebuffers(1, &processFBO);
+
+	glDeleteTextures(1, &shadowTex);
+	glDeleteFramebuffers(1, &shadowFBO);
+	
+	glDeleteTextures(2, playerShadowTex);
+	glDeleteFramebuffers(2, playerShadowFBO);
 }
 
 void Renderer::UpdateScene(float dt) {
@@ -506,11 +561,101 @@ void Renderer::UpdateScene(float dt) {
 	}
 }
 
-void Renderer::RenderScene() {
-	DrawScene();
+void Renderer::RenderScene() 
+{
+	if (splitScreenEnabled) {
+		for (int i = 0; i < 2; i++)
+		{
+			viewMatrix = camera[i]->BuildViewMatrix();
+
+			glBindBuffer(GL_UNIFORM_BUFFER, uboMatrices);
+			glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4), sizeof(Matrix4), viewMatrix.values);
+			glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+			glBindBuffer(GL_UNIFORM_BUFFER, uboCamera);
+			glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Vector3), &(camera[i]->GetPosition()));
+			glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+			DrawShadowScene(&playerShadowFBO[i], &i);
+
+			GLuint64 handler = glGetTextureHandleARB(playerShadowTex[i]);
+			glMakeTextureHandleResidentARB(handler);
+			textures.values[20] = handler;
+
+			glBindBuffer(GL_UNIFORM_BUFFER, uboTextures);
+			glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(textureStruct), textures.values);
+			glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+			DrawScene(&playerFBO[i], &i);
+		}
+	}
+	else {
+		viewMatrix = camera[0]->BuildViewMatrix();
+
+		glBindBuffer(GL_UNIFORM_BUFFER, uboMatrices);
+		glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4), sizeof(Matrix4), viewMatrix.values);
+		glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+		glBindBuffer(GL_UNIFORM_BUFFER, uboCamera);
+		glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Vector3), &(camera[0]->GetPosition()));
+		glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+		int tempIndex = 0;
+		DrawShadowScene(&shadowFBO, &tempIndex);
+
+		GLuint64 handler = glGetTextureHandleARB(shadowTex);
+		glMakeTextureHandleResidentARB(handler);
+		textures.values[20] = handler;
+
+		glBindBuffer(GL_UNIFORM_BUFFER, uboTextures);
+		glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(textureStruct), textures.values);
+		glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+		DrawScene(&sceneFBO,&tempIndex);
+	}
+	
 	DrawPostProcess();
 	PresentScene();
 	ResetProjectionMatrix();
+
+}
+
+void Renderer::DrawShadowScene(GLuint* framebuffer, int* cameraIndex) {
+	glBindFramebuffer(GL_FRAMEBUFFER, *framebuffer);
+
+	glClear(GL_DEPTH_BUFFER_BIT);
+	glViewport(0, 0, SHADOWSIZE, SHADOWSIZE);
+	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+
+	BindShader(shadowShader);
+
+	viewMatrix = Matrix4::BuildViewMatrix(light->GetPosition(), Vector3(heightMap->GetHeightMapSize().x * 0.7,
+		heightMap->GetHeightMapSize().y * 0.25, heightMap->GetHeightMapSize().z * 0.7));
+	int splitWidth = (splitScreenEnabled) ? width / 2 : width;
+	projMatrix = Matrix4::Perspective(400, 12000, (float) width / (float) height , 60);
+	shadowMatrix = projMatrix * viewMatrix;
+
+	glBindBuffer(GL_UNIFORM_BUFFER, uboMatrices);
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Matrix4), projMatrix.values);
+	glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4), sizeof(Matrix4), viewMatrix.values);
+	glBufferSubData(GL_UNIFORM_BUFFER, 2 * sizeof(Matrix4), sizeof(Matrix4), shadowMatrix.values);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+	DrawTerrain();
+	FillTerrain(cameraIndex);
+
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+	glViewport(0, 0, width, height);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	viewMatrix = camera[*cameraIndex]->BuildViewMatrix();
+	projMatrix = Matrix4::Perspective(1.0f, 15000.0f, (float)width / (float)height, 45.0f);
+	glBindBuffer(GL_UNIFORM_BUFFER, uboMatrices);
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Matrix4), projMatrix.values);
+	glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4), sizeof(Matrix4), viewMatrix.values);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
 }
 
@@ -522,48 +667,15 @@ void Renderer::ResetProjectionMatrix()
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
-void Renderer::DrawScene()
+void Renderer::DrawScene(GLuint* framebuffer, int* cameraIndex)
 {
-	if (splitScreenEnabled) {
-		for (int i = 0; i < 2; i++)
-		{
-			glBindFramebuffer(GL_FRAMEBUFFER, playerFBO[i]);
-			glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-			viewMatrix = camera[i]->BuildViewMatrix();
-			glBindBuffer(GL_UNIFORM_BUFFER, uboMatrices);
-			glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4), sizeof(Matrix4), viewMatrix.values);
-			glBindBuffer(GL_UNIFORM_BUFFER, 0);
-
-			glBindBuffer(GL_UNIFORM_BUFFER, uboCamera);
-			glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Vector3), &(camera[i]->GetPosition()));
-			glBindBuffer(GL_UNIFORM_BUFFER, 0);
-
-			frameFrustum.FromMatrix(projMatrix * viewMatrix);
-			DrawSkybox();
-			DrawTerrain();
-			FillTerrain(&i);
-			glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		}
-	}
-	else {
-		glBindFramebuffer(GL_FRAMEBUFFER, sceneFBO);
+		glBindFramebuffer(GL_FRAMEBUFFER, *framebuffer);
 		glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-		viewMatrix = camera[0]->BuildViewMatrix();
-		glBindBuffer(GL_UNIFORM_BUFFER, uboMatrices);
-		glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4), sizeof(Matrix4), viewMatrix.values);
-		glBindBuffer(GL_UNIFORM_BUFFER, 0);
-
-		glBindBuffer(GL_UNIFORM_BUFFER, uboCamera);
-		glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Vector3), &(camera[0]->GetPosition()));
-		glBindBuffer(GL_UNIFORM_BUFFER, 0);
-
 		frameFrustum.FromMatrix(projMatrix * viewMatrix);
 		DrawSkybox();
 		DrawTerrain();
-		int camera = 0;
-		FillTerrain(&camera);
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	}
+		FillTerrain(cameraIndex);
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);	
 	
 }
 void Renderer::DrawPostProcess()
@@ -601,18 +713,16 @@ void Renderer::DrawPostProcess()
 			glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
 			modelMatrix = Matrix4::Translation(Vector3(-0.5 + i, 0, 0)) * Matrix4::Scale(Vector3(0.5, 1.0, 1.0));
-			UpdateShaderMatrices();
+			glUniformMatrix4fv(glGetUniformLocation(fogShader->GetProgram(), "modelMatrix"), 1, false, modelMatrix.values);
 			quad->Draw();
 		}
 	}
 	else {
 		glActiveTexture(GL_TEXTURE0);
-		//glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, processTexture, 0);
 		glBindTexture(GL_TEXTURE_2D, sceneColourTex);
 		glUniform1i(glGetUniformLocation(fogShader->GetProgram(), "diffuseTex"), 0);
 
 		glActiveTexture(GL_TEXTURE1);
-		//glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, processTexture, 0);
 		glBindTexture(GL_TEXTURE_2D, scenePositionTex);
 		glUniform1i(glGetUniformLocation(fogShader->GetProgram(), "positionTex"), 1);
 

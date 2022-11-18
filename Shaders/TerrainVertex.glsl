@@ -4,9 +4,18 @@ layout (std140) uniform Matrices
 {
     mat4 projMatrix;
     mat4 viewMatrix;
+    mat4 shadowMatrix;
 };
 uniform mat4 modelMatrix;
 uniform float terrainHeight;
+
+uniform light{
+    vec4 lightColour;
+    vec3 lightPosition;
+    float lightRadius;
+    vec4 lightSpecular;
+};
+
 
 in vec3 position;
 in vec2 texCoord;
@@ -20,6 +29,7 @@ out Vertex {
     vec3 tangent;
     vec3 binormal;
     vec3 worldPos;
+    vec4 shadowProj;
 } OUT;
 
 void main(void) {
@@ -42,4 +52,8 @@ void main(void) {
     OUT.worldPos = worldPos.xyz;
 
     OUT.texCoord = texCoord;
+
+    vec3 viewDir = normalize(lightPosition - worldPos.xyz);
+    vec4 pushVal = vec4(OUT.normal, 0) * dot(viewDir, OUT.normal);
+    OUT.shadowProj = shadowMatrix * (worldPos + pushVal);
 }

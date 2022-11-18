@@ -32,16 +32,18 @@ protected:
 	void	ClearNodeLists();
 	void	DrawNodes();
 	void	DrawNode(SceneNode* n);
-	void DrawCharacter(SceneNode*n);
+	void	DrawCharacter(SceneNode*n);
 	void	DrawSkybox();
 
 	void PresentScene();
 	void DrawPostProcess();
-	void DrawScene();
+	void DrawShadowScene(GLuint* framebuffer, int* cameraIndex);
+	void DrawScene(GLuint* framebuffer, int* cameraIndex);
 
 
 	void GenerateFrameBuffers();
 	void GenerateSceneBuffer(int width, int height);
+	void GenerateShadowBuffer();
 	void GeneratePlayerBuffer(GLuint* buffer, int width, int height, int player);
 	void GeneratePostProcessBuffer(int width, int height);
 
@@ -64,12 +66,17 @@ protected:
 
 
 	HeightMap* heightMap;
+
 	Shader* terrainShader;
 	Shader* nodeShader;
 	Shader* skyboxShader;
 	Shader* simpleShader;
 	Shader* fogShader;
 	Shader* characterShader;
+	Shader* shadowShader;
+
+
+
 	Camera* camera[2];
 	Light* light;
 
@@ -99,6 +106,8 @@ protected:
 
 
 	GLuint playerFBO[2];
+	GLuint playerShadowFBO[2];
+	GLuint playerShadowTex[2];
 	GLuint playerColourTex[2];
 	GLuint playerDepthTex[2];
 	GLuint playerPositionTex[2];
@@ -110,6 +119,9 @@ protected:
 	GLuint sceneColourTex;
 	GLuint sceneDepthTex;
 	GLuint scenePositionTex;
+
+	GLuint shadowFBO;
+	GLuint shadowTex;
 
 	bool splitScreenEnabled = true;
 

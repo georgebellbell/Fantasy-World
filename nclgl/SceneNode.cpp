@@ -34,10 +34,5 @@ void SceneNode::Update(float dt) {
 	int iter = 0;
 	for (vector<SceneNode*>::iterator i = children.begin(); i != children.end(); ++i) {
 		(*i)->Update(dt);
-		iter += 1;
-		if (iter == 2) {
-			std::cout << iter << std::endl;
-
-		}
 	}
 }

@@ -1,4 +1,11 @@
-# version 330 core
+#version 330 core
+#extension GL_ARB_bindless_texture : enable
+
+layout(bindless_sampler) uniform sampler2D bindless;
+uniform textures{
+    sampler2D arr[24];
+} terrain;
+
 uniform sampler2D diffuseTex;
 uniform sampler2D normalTex;
 
@@ -8,6 +15,7 @@ in Vertex {
     vec3 tangent;
     vec3 binormal;
 	vec3 worldPos;
+    vec4 shadowProj;
 } IN;
 
 uniform light{
@@ -42,9 +50,25 @@ void main ( void ) {
 	float specFactor = clamp(dot(halfDir,bumpNormal), 0.0, 1.0);
 	specFactor = pow(specFactor, 60.0f);
 
+	float shadow = 1.0;
+
+    vec3 shadowNDC = IN.shadowProj.xyz / IN.shadowProj.w;
+    if( abs(shadowNDC.x) < 1.0f && 
+        abs(shadowNDC.y) < 1.0f && 
+        abs(shadowNDC.z) < 1.0f){
+        vec3 biasCoord = shadowNDC * 0.5f + 0.5f;
+        float shadowZ = texture(terrain.arr[20], biasCoord.xy).x;
+        if(shadowZ <biasCoord.z) {
+            shadow = 0.0f;
+        }
+    }
+
+
+
 	vec3 surface = (diffuse.rgb * lightColour.rgb);
 	gColour.rgb = surface * lambert * attenuation;
 	gColour.rgb += (lightSpecular.rgb * specFactor)*attenuation*0.33;
+    gColour.rgb *= shadow;
 	gColour.rgb += surface * 0.1f;
 	gColour.a = diffuse.a;
 

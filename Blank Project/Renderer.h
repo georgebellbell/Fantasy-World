@@ -24,7 +24,8 @@ public:
 	void ResetProjectionMatrix();
 	void UpdateScene(float dt) override;
 
-	void toggleSplitScreen() { splitScreenEnabled = !splitScreenEnabled; }
+	void ToggleSplitScreen() { splitScreenEnabled = !splitScreenEnabled; }
+	void ToggleCameraMode();
 
 protected:
 	void	BuildNodeLists(SceneNode* from, int* camera);
@@ -34,6 +35,7 @@ protected:
 	void	DrawNode(SceneNode* n);
 	void	DrawCharacter(SceneNode*n);
 	void	DrawSkybox();
+	void	DrawWater();
 
 	void PresentScene();
 	void DrawPostProcess();
@@ -74,7 +76,7 @@ protected:
 	Shader* fogShader;
 	Shader* characterShader;
 	Shader* shadowShader;
-
+	Shader* reflectShader;
 
 
 	Camera* camera[2];
@@ -86,6 +88,7 @@ protected:
 	GLuint towerTextures[2];
 	GLuint treeTextures[4];
 	GLuint cubeMap;
+	GLuint waterTextures[2];
 
 	SceneNode* root;
 
@@ -127,5 +130,9 @@ protected:
 
 	int currentFrame;
 	float frameTime;
+	float sceneTime;
+
+	float waterRotate;
+	float waterCycle;
 };
 

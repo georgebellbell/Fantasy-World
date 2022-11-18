@@ -39,6 +39,7 @@
     <ClCompile Include="Plane.cpp" />
     <ClCompile Include="HeightMap.cpp" />
     <ClCompile Include="Light.cpp" />
+    <ClCompile Include="CameraPoint.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="common.h" />
@@ -89,6 +90,7 @@
     <ClInclude Include="Plane.h" />
     <ClInclude Include="HeightMap.h" />
     <ClInclude Include="Light.h" />
+    <ClInclude Include="CameraPoint.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="GLAD">

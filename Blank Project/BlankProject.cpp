@@ -23,8 +23,14 @@ int main() {
 			Shader::ReloadAllShaders();
 		}
 		if (Window::GetKeyboard()->KeyTriggered(KEYBOARD_2)) {
-			renderer.toggleSplitScreen();
+			renderer.ToggleSplitScreen();
 		}
+
+		if (Window::GetKeyboard()->KeyTriggered(KEYBOARD_M)) {
+			renderer.ToggleCameraMode();
+		}
+
+
 	}
 
 	return 0;

@@ -23,13 +23,22 @@ struct lightStruct {
 } mainLight;
 
 const int TREE_COUNT = 200;
-#define SHADOWSIZE 2048
+#define SHADOWSIZE 8000
 
 Renderer::Renderer(Window& parent) : OGLRenderer(parent) {
 	heightMap = new HeightMap(TEXTUREDIR"Fantasy_Heightmap.png");
 	Vector3 dimensions = heightMap->GetHeightMapSize();
-	camera[0] = new Camera(-40, 270, dimensions * Vector3(0.5, 1, 0.5));
-	camera[1] = new Camera(-40, 90, dimensions * Vector3(0.3, 0.5, 0.5));
+	vector<CameraPoint> camera1Path = { CameraPoint(-40, 90, dimensions * Vector3(0.3, 1, 0.3)),
+									    CameraPoint(-40, 180, dimensions * Vector3(0.7, 1, 0.3)),
+										CameraPoint(-40, 270, dimensions * Vector3(0.7, 1, 0.7)),
+										CameraPoint(-40, 360, dimensions * Vector3(0.3, 1, 0.8))};
+
+	vector<CameraPoint> camera2Path = camera1Path;
+	std::reverse(camera2Path.begin(), camera2Path.end());
+
+	camera[0] = new Camera(-40, 270, dimensions * Vector3(0.5, 1, 0.5), camera1Path);
+	camera[1] = new Camera(-40, 90, dimensions * Vector3(0.3, 0.5, 0.5), camera2Path);
+
 	light = new Light(dimensions * Vector3(0.5f, 1.5f, 0.5f), Vector4(1, 1, 1, 1), dimensions.x * 50.0f, Vector4(1, 1, 1, 1));
 
 	terrainShader = new Shader("TerrainVertex.glsl", "TerrainFragment.glsl");
@@ -39,10 +48,12 @@ Renderer::Renderer(Window& parent) : OGLRenderer(parent) {
 	fogShader = new Shader("FogVertex.glsl", "FogFragment.glsl");
 	characterShader = new Shader("SkinningVertex.glsl", "SkinningFragment.glsl");
 	shadowShader = new Shader("shadowVert.glsl", "shadowFrag.glsl");
+	reflectShader = new Shader("ReflectVertex.glsl", "ReflectFragment.glsl");
 
 	if (!terrainShader->LoadSuccess() || !nodeShader->LoadSuccess()	 || 
 		!skyboxShader->LoadSuccess()  || !simpleShader->LoadSuccess()|| 
-		!fogShader->LoadSuccess()	  || !characterShader->LoadSuccess() || !shadowShader->LoadSuccess())
+		!fogShader->LoadSuccess()	  || !characterShader->LoadSuccess() || 
+		!shadowShader->LoadSuccess()  || !reflectShader->LoadSuccess())
 		return;
 
 	LoadMeshes();
@@ -74,6 +85,8 @@ Renderer::Renderer(Window& parent) : OGLRenderer(parent) {
 	glEnable(GL_CULL_FACE);
 	glCullFace(GL_BACK);
 	glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
+
+	sceneTime = 0;
 	init = true;
 }
 
@@ -395,6 +408,12 @@ void Renderer::LoadTextures()
 	treeTextures[0] = SOIL_load_OGL_texture(TEXTUREDIR"TreeDiffuse2.png", SOIL_LOAD_AUTO, SOIL_CREATE_NEW_ID, SOIL_FLAG_MIPMAPS);
 	treeTextures[1] = SOIL_load_OGL_texture(TEXTUREDIR"TreeBump2.png", SOIL_LOAD_AUTO, SOIL_CREATE_NEW_ID, SOIL_FLAG_MIPMAPS);
 
+	waterTextures[0] = SOIL_load_OGL_texture(TEXTUREDIR "water.TGA", SOIL_LOAD_AUTO,
+		SOIL_CREATE_NEW_ID, SOIL_FLAG_MIPMAPS);
+
+	waterTextures[1] = SOIL_load_OGL_texture(TEXTUREDIR "waterbump.png", SOIL_LOAD_AUTO,
+		SOIL_CREATE_NEW_ID, SOIL_FLAG_MIPMAPS);
+
 
 }
 
@@ -412,7 +431,7 @@ void Renderer::CreateMatrixUBO()
 	unsigned int uniformBlockIndexFog = glGetUniformBlockIndex(fogShader->GetProgram(), "Matrices");
 	unsigned int uniformBlockIndexSkeleton = glGetUniformBlockIndex(characterShader->GetProgram(), "Matrices");
 	unsigned int uniformBlockIndexShadow = glGetUniformBlockIndex(shadowShader->GetProgram(), "Matrices");
-
+	unsigned int uniformBlockIndexReflect = glGetUniformBlockIndex(reflectShader->GetProgram(), "Matrices");
 
 	glBindBufferBase(GL_UNIFORM_BUFFER, 0, uboMatrices);
 
@@ -423,6 +442,7 @@ void Renderer::CreateMatrixUBO()
 	glUniformBlockBinding(fogShader->GetProgram(), uniformBlockIndexFog, 0);
 	glUniformBlockBinding(characterShader->GetProgram(), uniformBlockIndexSkeleton, 0);
 	glUniformBlockBinding(shadowShader->GetProgram(), uniformBlockIndexShadow, 0);
+	glUniformBlockBinding(reflectShader->GetProgram(), uniformBlockIndexReflect, 0);
 }
 
 void Renderer::CreateTextureUBO()
@@ -458,6 +478,17 @@ void Renderer::CreateTextureUBO()
 		textures.values[i + 10] = handler;
 	}
 
+	for (int i = 0; i < 2; i++)
+	{
+		if (!waterTextures[i])
+			return;
+		SetTextureRepeating(waterTextures[i], true);
+		GLuint64 handler = glGetTextureHandleARB(waterTextures[i]);
+		glMakeTextureHandleResidentARB(handler);
+		textures.values[17 + i] = handler;
+	}
+
+	
 	glGenBuffers(1, &uboTextures);
 	glBindBuffer(GL_UNIFORM_BUFFER, uboTextures);
 	glBufferData(GL_UNIFORM_BUFFER, sizeof(textureStruct), textures.values, GL_DYNAMIC_DRAW);
@@ -466,12 +497,15 @@ void Renderer::CreateTextureUBO()
 	unsigned int uniformBlockIndexTerrain = glGetUniformBlockIndex(terrainShader->GetProgram(), "textures");
 	unsigned int uniformBlockIndexNode = glGetUniformBlockIndex(nodeShader->GetProgram(), "textures");
 	unsigned int uniformBlockIndexCharacter = glGetUniformBlockIndex(characterShader->GetProgram(), "textures");
+	unsigned int uniformBlockIndexReflect = glGetUniformBlockIndex(reflectShader->GetProgram(), "textures");
+
 
 	glBindBufferBase(GL_UNIFORM_BUFFER, 1, uboTextures);
 
 	glUniformBlockBinding(terrainShader->GetProgram(), uniformBlockIndexTerrain, 1);
 	glUniformBlockBinding(nodeShader->GetProgram(), uniformBlockIndexNode, 1);
 	glUniformBlockBinding(characterShader->GetProgram(), uniformBlockIndexCharacter, 1);
+	glUniformBlockBinding(reflectShader->GetProgram(), uniformBlockIndexReflect, 1);
 }
 
 void Renderer::CreateLightsUBO()
@@ -484,12 +518,14 @@ void Renderer::CreateLightsUBO()
 	unsigned int uniformBlockIndexTerrain = glGetUniformBlockIndex(terrainShader->GetProgram(), "light");
 	unsigned int uniformBlockIndexNode = glGetUniformBlockIndex(nodeShader->GetProgram(), "light");
 	unsigned int uniformBlockIndexCharacter = glGetUniformBlockIndex(characterShader->GetProgram(), "light");
+	unsigned int uniformBlockIndexReflect = glGetUniformBlockIndex(reflectShader->GetProgram(), "light");
 
 	glBindBufferBase(GL_UNIFORM_BUFFER, 2, uboLights);
 
 	glUniformBlockBinding(terrainShader->GetProgram(), uniformBlockIndexTerrain, 2);
 	glUniformBlockBinding(nodeShader->GetProgram(), uniformBlockIndexNode, 2);
 	glUniformBlockBinding(characterShader->GetProgram(), uniformBlockIndexCharacter, 2);
+	glUniformBlockBinding(reflectShader->GetProgram(), uniformBlockIndexReflect, 2);
 }
 
 void Renderer::CreateCameraUBO() {
@@ -502,6 +538,7 @@ void Renderer::CreateCameraUBO() {
 	unsigned int uniformBlockIndexNode = glGetUniformBlockIndex(nodeShader->GetProgram(), "camera");
 	unsigned int uniformBlockIndexFog = glGetUniformBlockIndex(fogShader->GetProgram(), "camera");
 	unsigned int uniformBlockIndexCharacter = glGetUniformBlockIndex(characterShader->GetProgram(), "camera");
+	unsigned int uniformBlockIndexReflect = glGetUniformBlockIndex(reflectShader->GetProgram(), "camera");
 
 	glBindBufferBase(GL_UNIFORM_BUFFER, 3, uboCamera);
 
@@ -509,6 +546,7 @@ void Renderer::CreateCameraUBO() {
 	glUniformBlockBinding(nodeShader->GetProgram(), uniformBlockIndexNode, 3);
 	glUniformBlockBinding(fogShader->GetProgram(), uniformBlockIndexFog, 3);
 	glUniformBlockBinding(characterShader->GetProgram(), uniformBlockIndexCharacter, 3);
+	glUniformBlockBinding(reflectShader->GetProgram(), uniformBlockIndexReflect, 3);
 }
 
 Renderer::~Renderer(void) {
@@ -522,6 +560,7 @@ Renderer::~Renderer(void) {
 	delete simpleShader;
 	delete fogShader;
 	delete shadowShader;
+	delete reflectShader;
 
 	delete root;
 	delete light;
@@ -554,11 +593,22 @@ void Renderer::UpdateScene(float dt) {
 	camera[1]->UpdateCamera(dt);
 	root->Update(dt);
 
+	sceneTime += dt;
+
 	frameTime -= dt;
 	while (frameTime < 0.0f) {
 		currentFrame = (currentFrame + 1) % eggAnim->GetFrameCount();
 		frameTime += 1.0f / eggAnim->GetFrameRate();
 	}
+
+	waterRotate += dt * 2.0f;
+	waterCycle += dt * 0.25f;
+}
+
+void Renderer::ToggleCameraMode()
+{
+	camera[0]->ToggleCameraMode();
+	camera[1]->ToggleCameraMode();
 }
 
 void Renderer::RenderScene() 
@@ -674,7 +724,9 @@ void Renderer::DrawScene(GLuint* framebuffer, int* cameraIndex)
 		frameFrustum.FromMatrix(projMatrix * viewMatrix);
 		DrawSkybox();
 		DrawTerrain();
+		DrawWater();
 		FillTerrain(cameraIndex);
+
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);	
 	
 }
@@ -695,6 +747,9 @@ void Renderer::DrawPostProcess()
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 	glUniformMatrix4fv(glGetUniformLocation(fogShader->GetProgram(), "modelMatrix"), 1, false, modelMatrix.values);
 
+	glUniform1f(glGetUniformLocation(fogShader->GetProgram(), "fogFactor"), sin(sceneTime / 2));
+
+
 	glDisable(GL_DEPTH_TEST);
 
 	if (splitScreenEnabled) {
@@ -707,6 +762,7 @@ void Renderer::DrawPostProcess()
 			glActiveTexture(GL_TEXTURE1);
 			glBindTexture(GL_TEXTURE_2D, playerPositionTex[i]);
 			glUniform1i(glGetUniformLocation(fogShader->GetProgram(), "positionTex"), 1);
+
 
 			glBindBuffer(GL_UNIFORM_BUFFER, uboCamera);
 			glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Vector3), &(camera[i]->GetPosition()));
@@ -756,8 +812,6 @@ void Renderer::PresentScene()
 	quad->Draw();
 }
 
-
-
 void Renderer::DrawSkybox() {
 	glDepthMask(GL_FALSE);
 
@@ -775,11 +829,35 @@ void Renderer::DrawTerrain()
 
 	glUniform1f(glGetUniformLocation(terrainShader->GetProgram(), "terrainHeight"), heightMap->GetHeightMapSize().y);
 
-	//glUniform3fv(glGetUniformLocation(terrainShader->GetProgram(), "cameraPos"), 1, (float*)&camera->GetPosition());
 
 	heightMap->Draw();
 }
 
+void Renderer::DrawWater() {
+	BindShader(reflectShader);
+
+	glUniform1i(glGetUniformLocation(reflectShader->GetProgram(), "cubeTex"), 0);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, cubeMap);
+
+	Vector3 hSize = heightMap->GetHeightMapSize();
+
+	modelMatrix = Matrix4::Translation(Vector3(hSize.x * 0.5f, hSize.y * 0.15f , hSize.z * 0.5f)) * 
+				Matrix4::Scale(Vector3(5000,5000,5000)) * Matrix4::Rotation(-90, Vector3(1, 0, 0));
+
+	textureMatrix =
+		Matrix4::Translation(Vector3(waterCycle, 0.0f, waterCycle)) *
+		Matrix4::Scale(Vector3(10, 10, 10)) *
+		Matrix4::Rotation(waterRotate, Vector3(0, 0, 1));
+
+	glUniformMatrix4fv(glGetUniformLocation(reflectShader->GetProgram(), "modelMatrix"), 1, false, modelMatrix.values);
+	glUniformMatrix4fv(glGetUniformLocation(reflectShader->GetProgram(), "textureMatrix"), 1, false, textureMatrix.values);
+
+	quad->Draw();
+
+	modelMatrix.ToIdentity();
+
+}
 void Renderer::FillTerrain(int* camera) {
 	BuildNodeLists(root, camera);
 	SortNodeLists();
